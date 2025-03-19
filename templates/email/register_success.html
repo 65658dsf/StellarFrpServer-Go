@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StellarFrp-恒星映射 - 注册成功</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #eaeaea;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .welcome-message {
+            font-size: 18px;
+            color: #3498db;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .highlight {
+            color: #3498db;
+            font-weight: bold;
+        }
+        .features {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .feature-item {
+            margin: 10px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+            border-top: 1px solid #eaeaea;
+        }
+        @media only screen and (max-width: 600px) {
+            .container {
+                width: 100%;
+                border-radius: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">StellarFrp-恒星映射</div>
+        </div>
+        <div class="content">
+            <div class="welcome-message">
+                欢迎加入 StellarFrp-恒星映射！
+            </div>
+            <p>尊敬的 <span class="highlight">{{if .UserName}}{{.UserName}}{{else}}用户{{end}}</span>：</p>
+            <p>您好！感谢您选择 <span class="highlight">StellarFrp-恒星映射</span>。您的账户已经成功注册并激活。</p>
+            
+            <div class="features">
+                <h3>快速开始使用：</h3>
+                <div class="feature-item">✓ 登录您的账户开始使用我们的服务</div>
+                <div class="feature-item">✓ 查看我们的使用教程了解如何配置内网穿透</div>
+                <div class="feature-item">✓ 随时联系我们的客服获取帮助</div>
+            </div>
+            
+            <p>如果您在使用过程中遇到任何问题，请随时与我们联系。</p>
+        </div>
+        <div class="footer">
+            <p>&copy; {{.ExpireTime.Year}} StellarFrp-恒星映射 版权所有</p>
+            <p>安全、稳定、高效的内网穿透服务</p>
+        </div>
+    </div>
+</body>
+</html>
