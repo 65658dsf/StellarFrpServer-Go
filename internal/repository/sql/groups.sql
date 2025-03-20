@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS `groups` (
 
 -- 插入默认用户组
 INSERT INTO `groups` (`id`, `name`, `tunnel_limit`, `bandwidth_limit`, `traffic_quota`) VALUES
-(1, '免费用户', 2, 1, 30),
-(2, '普通会员', 5, 5, 50),
-(3, '高级会员', 10, 10, 100)
+(1, '未实名', 2, 1, 10),
+(2, '免费用户', 5, 2, 30),
+(3, '普通会员', 10, 4, 50),
+(4, '高级会员', 15, 6, 100)
 ON DUPLICATE KEY UPDATE `id`=`id`;

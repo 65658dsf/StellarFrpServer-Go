@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS `nodes` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '节点ID',
+  `node_name` varchar(100) NOT NULL COMMENT '节点名称',
+  `frps_port` int(11) NOT NULL COMMENT 'frps服务端口',
+  `url` varchar(255) NOT NULL COMMENT '节点URL',
+  `token` varchar(255) NOT NULL COMMENT '节点访问令牌',
+  `user` varchar(100) NOT NULL COMMENT '节点访问用户',
+  `description` text COMMENT '节点描述',
+  `permission` bigint(20) NOT NULL DEFAULT '0' COMMENT '节点权限(0:公共节点所有人可访问,其他值:可访问的最低用户组ID)',
+  `allowed_types` json NOT NULL COMMENT '开放类型(如:["TCP","UDP"])',
+  `host` varchar(255) NOT NULL COMMENT '节点主机地址',
+  `port_range` varchar(50) NOT NULL COMMENT '端口开放范围(如:10000-20000)',
+  `ip` varchar(50) NOT NULL COMMENT '节点IP地址',
+  `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT '节点状态(0:离线,1:在线,2:维护中)',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_node_name` (`node_name`),
+  KEY `idx_status` (`status`),
+  KEY `idx_permission` (`permission`),
+  KEY `idx_user` (`user`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='FRP节点表';

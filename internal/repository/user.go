@@ -33,6 +33,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByToken(ctx context.Context, token string) (*User, error)
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*User, error)
@@ -135,4 +136,18 @@ func (r *userRepository) List(ctx context.Context, offset, limit int) ([]*User, 
 		return nil, err
 	}
 	return users, nil
+}
+
+// GetByToken 根据Token获取用户
+func (r *userRepository) GetByToken(ctx context.Context, token string) (*User, error) {
+	user := &User{}
+	query := `SELECT * FROM users WHERE token = ?`
+	err := r.db.GetContext(ctx, user, query, token)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+	return user, nil
 }

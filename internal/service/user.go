@@ -22,6 +22,7 @@ type UserService interface {
 	GetByID(ctx context.Context, id int64) (*repository.User, error)
 	GetByUsername(ctx context.Context, username string) (*repository.User, error)
 	GetByEmail(ctx context.Context, email string) (*repository.User, error)
+	GetByToken(ctx context.Context, token string) (*repository.User, error)
 	Update(ctx context.Context, user *repository.User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, page, pageSize int) ([]*repository.User, error)
@@ -231,4 +232,9 @@ func (s *userService) GetGroupName(ctx context.Context, groupID int64) (string, 
 		return "未知用户组", err
 	}
 	return group.Name, nil
+}
+
+// GetByToken 根据Token获取用户
+func (s *userService) GetByToken(ctx context.Context, token string) (*repository.User, error) {
+	return s.userRepo.GetByToken(ctx, token)
 }
