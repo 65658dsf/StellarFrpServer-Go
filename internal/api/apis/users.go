@@ -14,6 +14,7 @@ func RegisterUserRoutes(router *gin.RouterGroup, userHandler *handler.UserHandle
 		users.POST("/register", userHandler.Register)
 		users.POST("/sendcode", userHandler.SendMessage)
 		users.POST("/login", userHandler.Login)
+		users.POST("/resetpassword", userHandler.ResetPassword)
 	}
 
 	// 异步任务路由

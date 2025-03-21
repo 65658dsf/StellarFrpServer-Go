@@ -13,6 +13,7 @@ import (
 	"stellarfrp/config"
 	"stellarfrp/internal/api"
 	"stellarfrp/pkg/database"
+	"stellarfrp/pkg/geetest"
 	"stellarfrp/pkg/logger"
 )
 
@@ -41,8 +42,15 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// 初始化路由
-	router := api.SetupRouter(cfg, logger, db, redisClient)
+	// 初始化极验验证客户端
+	geetestClient := geetest.NewGeetestClient(
+		cfg.Geetest.CaptchaID,
+		cfg.Geetest.CaptchaKey,
+		cfg.Geetest.APIServer,
+	)
+
+	// 初始化API路由
+	router := api.SetupRouter(cfg, logger, db, redisClient, geetestClient)
 
 	// 创建HTTP服务器
 	server := &http.Server{

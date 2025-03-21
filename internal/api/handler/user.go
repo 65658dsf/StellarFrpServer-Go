@@ -8,6 +8,7 @@ import (
 	"stellarfrp/internal/service"
 	"stellarfrp/internal/types"
 	"stellarfrp/pkg/email"
+	"stellarfrp/pkg/geetest"
 	"stellarfrp/pkg/logger"
 	"strconv"
 	"time"
@@ -20,19 +21,21 @@ import (
 
 // UserHandler 用户处理器
 type UserHandler struct {
-	userService  service.UserService
-	redisClient  *redis.Client
-	emailService *email.Service
-	logger       *logger.Logger
+	userService   service.UserService
+	redisClient   *redis.Client
+	emailService  *email.Service
+	logger        *logger.Logger
+	geetestClient *geetest.GeetestClient
 }
 
 // NewUserHandler 创建用户处理器实例
-func NewUserHandler(userService service.UserService, redisClient *redis.Client, emailService *email.Service, logger *logger.Logger) *UserHandler {
+func NewUserHandler(userService service.UserService, redisClient *redis.Client, emailService *email.Service, logger *logger.Logger, geetestClient *geetest.GeetestClient) *UserHandler {
 	return &UserHandler{
-		userService:  userService,
-		redisClient:  redisClient,
-		emailService: emailService,
-		logger:       logger,
+		userService:   userService,
+		redisClient:   redisClient,
+		emailService:  emailService,
+		logger:        logger,
+		geetestClient: geetestClient,
 	}
 }
 
@@ -311,6 +314,53 @@ func (h *UserHandler) SendMessage(c *gin.Context) {
 	// 验证邮箱格式
 	if !regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@(qq\.com|163\.com|outlook\.com|gmail\.com)$`).MatchString(req.Email) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "邮箱格式不正确"})
+		return
+	}
+
+	// 检查极验验证配置是否有效
+	if h.geetestClient.CaptchaID == "" || h.geetestClient.CaptchaKey == "" || h.geetestClient.APIServer == "" {
+		h.logger.Error("极验验证配置无效", "captcha_id", h.geetestClient.CaptchaID, "api_server", h.geetestClient.APIServer)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "服务器配置错误"})
+		return
+	}
+
+	// 验证极验验证码
+	// 优先使用validate对象中的参数
+	if req.Validate != nil {
+		// 构建验证参数
+		verifyParams := geetest.VerifyParams{
+			LotNumber:     req.Validate.LotNumber,
+			CaptchaOutput: req.Validate.CaptchaOutput,
+			PassToken:     req.Validate.PassToken,
+			GenTime:       req.Validate.GenTime,
+		}
+
+		// 验证极验验证码
+		verified, err := h.geetestClient.Verify(verifyParams)
+		if err != nil || !verified {
+			h.logger.Error("人机验证失败", "error", err, "lot_number", req.Validate.LotNumber)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "人机验证失败"})
+			return
+		}
+	} else if req.LotNumber != "" {
+		// 兼容旧版参数
+		verifyParams := geetest.VerifyParams{
+			LotNumber:     req.LotNumber,
+			CaptchaOutput: req.CaptchaOutput,
+			PassToken:     req.PassToken,
+			GenTime:       req.GenTime,
+		}
+
+		// 验证极验验证码
+		verified, err := h.geetestClient.Verify(verifyParams)
+		if err != nil || !verified {
+			h.logger.Error("人机验证失败", "error", err, "lot_number", req.LotNumber)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "人机验证失败"})
+			return
+		}
+	} else {
+		// 没有提供验证参数
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "请完成人机验证"})
 		return
 	}
 

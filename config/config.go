@@ -15,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	Email    EmailConfig
+	Geetest  GeetestConfig
 }
 
 // DatabaseConfig MySQL数据库配置
@@ -41,6 +42,13 @@ type EmailConfig struct {
 	Password string // 邮箱密码
 	From     string // 发件人
 	FromName string // 发件人名称
+}
+
+// GeetestConfig 极验验证配置
+type GeetestConfig struct {
+	CaptchaID  string // 验证ID
+	CaptchaKey string // 验证密钥
+	APIServer  string // API服务器地址
 }
 
 // Load 从环境变量加载配置
@@ -97,6 +105,11 @@ func Load() (*Config, error) {
 			Password: os.Getenv("EMAIL_PASSWORD"),
 			From:     os.Getenv("EMAIL_FROM"),
 			FromName: os.Getenv("EMAIL_FROM_NAME"),
+		},
+		Geetest: GeetestConfig{
+			CaptchaID:  os.Getenv("GEETEST_CAPTCHA_ID"),
+			CaptchaKey: os.Getenv("GEETEST_CAPTCHA_KEY"),
+			APIServer:  os.Getenv("GEETEST_API_SERVER"),
 		},
 	}, nil
 }

@@ -9,6 +9,7 @@ import (
 	"stellarfrp/internal/service"
 	"stellarfrp/pkg/async"
 	"stellarfrp/pkg/email"
+	"stellarfrp/pkg/geetest"
 	"stellarfrp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,7 @@ import (
 )
 
 // SetupRouter 设置API路由
-func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisClient *redis.Client) *gin.Engine {
+func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisClient *redis.Client, geetestClient *geetest.GeetestClient) *gin.Engine {
 	// 创建Gin引擎
 	if cfg.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -54,7 +55,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeService := service.NewNodeService(nodeRepo)
 
 	// 初始化处理器
-	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger)
+	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 
 	// 健康检查
