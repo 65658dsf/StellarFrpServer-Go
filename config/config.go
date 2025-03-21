@@ -12,6 +12,7 @@ import (
 type Config struct {
 	APIPort  int
 	LogLevel string
+	LogFile  LogFileConfig
 	Database DatabaseConfig
 	Redis    RedisConfig
 	Email    EmailConfig
@@ -42,6 +43,16 @@ type EmailConfig struct {
 	Password string // 邮箱密码
 	From     string // 发件人
 	FromName string // 发件人名称
+}
+
+// LogFileConfig 日志文件配置
+type LogFileConfig struct {
+	Enabled    bool   // 是否启用文件日志
+	Path       string // 日志文件路径
+	MaxSize    int    // 单个日志文件最大大小(MB)
+	MaxBackups int    // 最大保留的旧日志文件数量
+	MaxAge     int    // 日志文件保留天数
+	Compress   bool   // 是否压缩旧日志文件
 }
 
 // GeetestConfig 极验验证配置
@@ -83,9 +94,33 @@ func Load() (*Config, error) {
 		emailPort = 587 // 默认端口
 	}
 
+	// 解析日志文件配置
+	logFileEnabled, _ := strconv.ParseBool(os.Getenv("LOG_FILE_ENABLED"))
+	logFileMaxSize, err := strconv.Atoi(os.Getenv("LOG_FILE_MAX_SIZE"))
+	if err != nil {
+		logFileMaxSize = 100 // 默认100MB
+	}
+	logFileMaxBackups, err := strconv.Atoi(os.Getenv("LOG_FILE_MAX_BACKUPS"))
+	if err != nil {
+		logFileMaxBackups = 30 // 默认保留30个旧文件
+	}
+	logFileMaxAge, err := strconv.Atoi(os.Getenv("LOG_FILE_MAX_AGE"))
+	if err != nil {
+		logFileMaxAge = 30 // 默认保留30天
+	}
+	logFileCompress, _ := strconv.ParseBool(os.Getenv("LOG_FILE_COMPRESS"))
+
 	return &Config{
 		APIPort:  apiPort,
 		LogLevel: os.Getenv("LOG_LEVEL"),
+		LogFile: LogFileConfig{
+			Enabled:    logFileEnabled,
+			Path:       os.Getenv("LOG_FILE_PATH"),
+			MaxSize:    logFileMaxSize,
+			MaxBackups: logFileMaxBackups,
+			MaxAge:     logFileMaxAge,
+			Compress:   logFileCompress,
+		},
 		Database: DatabaseConfig{
 			Host:     os.Getenv("DB_HOST"),
 			Port:     dbPort,

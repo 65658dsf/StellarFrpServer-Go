@@ -25,7 +25,7 @@ func main() {
 	}
 
 	// 初始化日志
-	logger := logger.NewLogger(cfg.LogLevel)
+	logger := logger.NewLoggerWithConfig(cfg.LogLevel, cfg.LogFile)
 	defer logger.Sync()
 
 	// 初始化数据库连接

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // GeetestClient 极验验证客户端
@@ -32,12 +31,14 @@ func NewGeetestClient(captchaID, captchaKey, apiServer string) *GeetestClient {
 
 // VerifyResponse 验证响应
 type VerifyResponse struct {
-	Status    string `json:"status"`
-	Code      string `json:"code"`
-	Msg       string `json:"msg"`
-	Result    string `json:"result"`
-	CaptchaID string `json:"captcha_id"`
-	LotNumber string `json:"lot_number"`
+	Status      string                 `json:"status"`
+	Code        string                 `json:"code"`
+	Msg         string                 `json:"msg"`
+	Result      string                 `json:"result"`
+	Reason      string                 `json:"reason"`
+	CaptchaID   string                 `json:"captcha_id"`
+	LotNumber   string                 `json:"lot_number"`
+	CaptchaArgs map[string]interface{} `json:"captcha_args"`
 }
 
 // VerifyParams 验证参数
@@ -51,11 +52,10 @@ type VerifyParams struct {
 // Verify 验证极验验证码
 func (c *GeetestClient) Verify(params VerifyParams) (bool, error) {
 	// 构建签名
-	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	signToken := c.generateSignToken(params.LotNumber, timestamp)
+	signToken := c.generateSignToken(params.LotNumber)
 
 	// 构建请求URL
-	apiURL := fmt.Sprintf("%s/validate", c.APIServer)
+	apiURL := fmt.Sprintf("%s/validate?captcha_id=%s", c.APIServer, c.CaptchaID)
 
 	// 构建请求体
 	data := url.Values{}
@@ -63,6 +63,7 @@ func (c *GeetestClient) Verify(params VerifyParams) (bool, error) {
 	data.Set("captcha_output", params.CaptchaOutput)
 	data.Set("pass_token", params.PassToken)
 	data.Set("gen_time", params.GenTime)
+	data.Set("sign_token", signToken)
 
 	// 发送请求
 	req, err := http.NewRequest("POST", apiURL, strings.NewReader(data.Encode()))
@@ -72,9 +73,6 @@ func (c *GeetestClient) Verify(params VerifyParams) (bool, error) {
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Captcha-ID", c.CaptchaID)
-	req.Header.Set("Timestamp", timestamp)
-	req.Header.Set("Signature", signToken)
 
 	// 发送请求
 	client := &http.Client{}
@@ -97,21 +95,26 @@ func (c *GeetestClient) Verify(params VerifyParams) (bool, error) {
 	}
 
 	// 验证结果
+	// 处理请求异常情况
+	if verifyResp.Status == "error" {
+		return false, errors.New(verifyResp.Msg)
+	}
+
+	// 验证结果
 	if verifyResp.Status == "success" && verifyResp.Result == "success" {
 		return true, nil
 	}
 
-	return false, errors.New(verifyResp.Msg)
+	// 验证失败但请求成功
+	return false, errors.New(verifyResp.Reason)
 }
 
 // generateSignToken 生成签名令牌
-func (c *GeetestClient) generateSignToken(lotNumber, timestamp string) string {
-	// 构建签名原文
-	signStr := fmt.Sprintf("%s%s%s", lotNumber, c.CaptchaID, timestamp)
-
+func (c *GeetestClient) generateSignToken(lotNumber string) string {
 	// 使用HMAC-SHA256算法计算签名
+	// 使用用户当前完成验证的流水号lot_number作为原始消息message，使用客户验证私钥作为key
 	h := hmac.New(sha256.New, []byte(c.CaptchaKey))
-	h.Write([]byte(signStr))
+	h.Write([]byte(lotNumber))
 
 	// 返回十六进制签名
 	return hex.EncodeToString(h.Sum(nil))
