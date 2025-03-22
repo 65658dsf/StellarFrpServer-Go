@@ -10,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // GeetestClient 极验验证客户端
@@ -51,6 +53,23 @@ type VerifyParams struct {
 
 // Verify 验证极验验证码
 func (c *GeetestClient) Verify(params VerifyParams) (bool, error) {
+	// 验证时间戳
+	if params.GenTime != "" {
+		// 将gen_time转换为int64
+		genTime, err := strconv.ParseInt(params.GenTime, 10, 64)
+		if err != nil {
+			return false, errors.New("验证时间戳格式错误")
+		}
+
+		// 获取当前时间戳
+		currentTime := time.Now().Unix()
+
+		// 检查时间差是否超过60秒
+		if currentTime-genTime > 60 {
+			return false, errors.New("验证码已过期，请刷新重试")
+		}
+	}
+
 	// 构建签名
 	signToken := c.generateSignToken(params.LotNumber)
 

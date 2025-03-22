@@ -60,9 +60,9 @@ func main() {
 
 	// 启动服务器（非阻塞）
 	go func() {
-		logger.Info(fmt.Sprintf("Server is running on port %d", cfg.APIPort))
+		logger.Info(fmt.Sprintf("服务器启动于端口: %d", cfg.APIPort))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start server", err)
+			logger.Fatal("启动服务器失败", err)
 		}
 	}()
 
@@ -71,14 +71,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	logger.Info("正在关闭服务器...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Fatal("Server forced to shutdown", err)
+		logger.Fatal("服务器被强制关闭", err)
 	}
 
-	logger.Info("Server exited properly")
+	logger.Info("服务器已正常退出")
 }

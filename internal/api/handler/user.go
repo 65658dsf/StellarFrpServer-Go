@@ -338,8 +338,12 @@ func (h *UserHandler) SendMessage(c *gin.Context) {
 		// 验证极验验证码
 		verified, err := h.geetestClient.Verify(verifyParams)
 		if err != nil || !verified {
+			errorMsg := "人机验证失败"
+			if err != nil {
+				errorMsg = err.Error()
+			}
 			h.logger.Error("人机验证失败", "error", err, "lot_number", req.Validate.LotNumber)
-			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "人机验证失败"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": errorMsg})
 			return
 		}
 	} else if req.LotNumber != "" {
@@ -354,8 +358,12 @@ func (h *UserHandler) SendMessage(c *gin.Context) {
 		// 验证极验验证码
 		verified, err := h.geetestClient.Verify(verifyParams)
 		if err != nil || !verified {
+			errorMsg := "人机验证失败"
+			if err != nil {
+				errorMsg = err.Error()
+			}
 			h.logger.Error("人机验证失败", "error", err, "lot_number", req.LotNumber)
-			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "人机验证失败"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": errorMsg})
 			return
 		}
 	} else {
