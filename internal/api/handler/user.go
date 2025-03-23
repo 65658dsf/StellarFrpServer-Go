@@ -199,33 +199,12 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 获取用户组名称
-	groupName, err := h.userService.GetGroupName(context.Background(), user.GroupID)
-	if err != nil {
-		// 如果获取失败，使用默认名称
-		groupName = "未知用户组"
-		h.logger.Error("Failed to get group name", "error", err)
-	}
-
-	// 返回用户信息
+	// 只返回token
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "登录成功",
 		"data": gin.H{
-			"group": groupName, // 使用从数据库获取的组名称
-			"group_time": func() string {
-				if user.GroupTime == nil {
-					return ""
-				}
-				return user.GroupTime.Format("2006-01-02 15:04:05")
-			}(),
-			"is_verified":   user.IsVerified,
-			"verify_count":  user.VerifyCount,
-			"status":        user.Status,
-			"register_time": user.RegisterTime.Format("2006-01-02 15:04:05"),
-			"username":      user.Username,
-			"email":         user.Email,
-			"token":         user.Token,
+			"token": user.Token,
 		},
 	})
 }
@@ -301,6 +280,43 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+}
+
+// GetUserInfo 获取用户信息
+func (h *UserHandler) GetUserInfo(c *gin.Context) {
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "无效的token"})
+		return
+	}
+
+	// 获取用户组名称
+	groupName, err := h.userService.GetGroupName(context.Background(), user.GroupID)
+	if err != nil {
+		groupName = "未知用户组"
+		h.logger.Error("Failed to get group name", "error", err)
+	}
+
+	userInfo := gin.H{
+		"id":            user.ID,
+		"username":      user.Username,
+		"email":         user.Email,
+		"register_time": user.RegisterTime.Format("2006-01-02 15:04:05"),
+		"group_id":      user.GroupID,
+		"group_name":    groupName,
+		"is_verified":   user.IsVerified,
+		"status":        user.Status,
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})
 }
 
 // SendMessage 发送验证码
