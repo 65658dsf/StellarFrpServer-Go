@@ -31,14 +31,14 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 	// 从请求头获取token
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
 		return
 	}
 
 	// 通过token获取用户信息
 	user, err := h.userService.GetByToken(context.Background(), token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "无效的token"})
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 	nodes, err := h.nodeService.GetAccessibleNodes(context.Background(), user.GroupID)
 	if err != nil {
 		h.logger.Error("Failed to get accessible nodes", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "服务器内部错误"})
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
 		return
 	}
 
