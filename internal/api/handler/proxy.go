@@ -578,8 +578,8 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		// 构建Link
 		remotePort, _ := strconv.Atoi(proxy.RemotePort)
 		link := ""
-		if node.Host != "" {
-			link = node.Host + ":" + proxy.RemotePort
+		if node.Host.Valid && node.Host.String != "" {
+			link = node.Host.String + ":" + proxy.RemotePort
 		} else {
 			link = node.IP + ":" + proxy.RemotePort
 		}
@@ -695,8 +695,8 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		// 构建Link
 		remotePort, _ := strconv.Atoi(proxy.RemotePort)
 		link := ""
-		if node.Host != "" {
-			link = node.Host + ":" + proxy.RemotePort
+		if node.Host.Valid && node.Host.String != "" {
+			link = node.Host.String + ":" + proxy.RemotePort
 		} else {
 			link = node.IP + ":" + proxy.RemotePort
 		}

@@ -12,6 +12,7 @@ type NodeService interface {
 	GetByUser(ctx context.Context, user string) ([]*repository.Node, error)
 	GetAccessibleNodes(ctx context.Context, groupID int64) ([]*repository.Node, error)
 	List(ctx context.Context, offset, limit int) ([]*repository.Node, error)
+	GetAllNodes(ctx context.Context) ([]*repository.Node, error)
 }
 
 // nodeService 节点服务实现
@@ -48,4 +49,10 @@ func (s *nodeService) GetAccessibleNodes(ctx context.Context, groupID int64) ([]
 // List 获取节点列表
 func (s *nodeService) List(ctx context.Context, offset, limit int) ([]*repository.Node, error) {
 	return s.nodeRepo.List(ctx, offset, limit)
+}
+
+// GetAllNodes 获取所有节点
+func (s *nodeService) GetAllNodes(ctx context.Context) ([]*repository.Node, error) {
+	// 使用List方法获取所有节点，不分页
+	return s.nodeRepo.List(ctx, 0, 10000) // 设置一个足够大的数字
 }

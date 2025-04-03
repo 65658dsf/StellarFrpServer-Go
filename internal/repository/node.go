@@ -11,21 +11,21 @@ import (
 
 // Node FRP节点模型
 type Node struct {
-	ID           int64     `db:"id"`
-	NodeName     string    `db:"node_name"`
-	FrpsPort     int       `db:"frps_port"`
-	URL          string    `db:"url"`
-	Token        string    `db:"token"`
-	User         string    `db:"user"`
-	Description  string    `db:"description"`
-	Permission   int64     `db:"permission"`
-	AllowedTypes string    `db:"allowed_types"` // JSON格式的字符串，如["TCP","UDP"]
-	Host         string    `db:"host"`
-	PortRange    string    `db:"port_range"`
-	IP           string    `db:"ip"`
-	Status       int       `db:"status"`
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
+	ID           int64          `db:"id"`
+	NodeName     string         `db:"node_name"`
+	FrpsPort     int            `db:"frps_port"`
+	URL          string         `db:"url"`
+	Token        string         `db:"token"`
+	User         string         `db:"user"`
+	Description  sql.NullString `db:"description"`
+	Permission   int64          `db:"permission"`
+	AllowedTypes string         `db:"allowed_types"` // JSON格式的字符串，如["TCP","UDP"]
+	Host         sql.NullString `db:"host"`
+	PortRange    string         `db:"port_range"`
+	IP           string         `db:"ip"`
+	Status       int            `db:"status"`
+	CreatedAt    time.Time      `db:"created_at"`
+	UpdatedAt    time.Time      `db:"updated_at"`
 }
 
 // NodeRepository 节点仓库接口
