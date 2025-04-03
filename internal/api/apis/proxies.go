@@ -13,13 +13,11 @@ func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHan
 	{
 		// 创建隧道
 		proxies.POST("/create", proxyHandler.CreateProxy)
-		// 获取用户的隧道列表
-		proxies.GET("/list", proxyHandler.GetProxies)
 		// 更新隧道
 		proxies.PUT("/update", proxyHandler.UpdateProxy)
 		// 删除隧道
 		proxies.POST("/delete", proxyHandler.DeleteProxy)
 		// 根据ID获取隧道
-		proxies.GET("/get/:id", proxyHandler.GetProxyByID)
+		proxies.POST("/get", proxyHandler.GetProxyByID)
 	}
 }

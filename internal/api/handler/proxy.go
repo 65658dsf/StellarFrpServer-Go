@@ -252,32 +252,6 @@ func (h *ProxyHandler) CreateProxy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
 }
 
-// GetProxies 获取用户的隧道列表
-func (h *ProxyHandler) GetProxies(c *gin.Context) {
-	// 从请求头获取token
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
-		return
-	}
-	// 获取用户名
-	username := c.Query("username")
-	if username == "" {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "缺少用户名参数"})
-		return
-	}
-
-	// 获取隧道列表
-	proxies, err := h.proxyService.GetByUsername(context.Background(), username)
-	if err != nil {
-		h.logger.Error("Failed to get proxies", "error", err)
-		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道列表失败: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": proxies})
-}
-
 // UpdateProxy 更新隧道
 func (h *ProxyHandler) UpdateProxy(c *gin.Context) {
 	// 从请求头获取token
@@ -287,22 +261,205 @@ func (h *ProxyHandler) UpdateProxy(c *gin.Context) {
 		return
 	}
 
-	// 解析请求参数
-	var proxy repository.Proxy
-	if err := c.ShouldBindJSON(&proxy); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
 		return
 	}
 
+	// 解析请求参数
+	type ProxyRequest struct {
+		ID                   int64  `json:"id" binding:"required"`
+		NodeID               int64  `json:"nodeId" binding:"required"`
+		ProxyName            string `json:"proxyName" binding:"required"`
+		LocalIP              string `json:"localIp" binding:"required"`
+		LocalPort            int    `json:"localPort" binding:"required"`
+		RemotePort           int    `json:"remotePort"`
+		Domain               string `json:"domain"`
+		ProxyType            string `json:"proxyType" binding:"required"`
+		HostHeaderRewrite    string `json:"hostHeaderRewrite"`
+		HeaderXFromWhere     string `json:"headerXFromWhere"`
+		ProxyProtocolVersion string `json:"proxyProtocolVersion"`
+		UseEncryption        bool   `json:"useEncryption"`
+		UseCompression       bool   `json:"useCompression"`
+	}
+
+	var req ProxyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	// 检查隧道是否存在
+	existingProxy, err := h.proxyService.GetByID(context.Background(), req.ID)
+	if err != nil {
+		h.logger.Error("Failed to check proxy existence", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "检查隧道失败: " + err.Error()})
+		return
+	}
+	if existingProxy == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "隧道不存在"})
+		return
+	}
+
+	// 检查用户是否有权限修改该隧道（只能修改自己的隧道）
+	if existingProxy.Username != user.Username {
+		c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "您没有权限修改此隧道"})
+		return
+	}
+
+	// 获取节点信息
+	node, err := h.nodeService.GetByID(context.Background(), req.NodeID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "节点不存在或已下线"})
+		return
+	}
+
+	// 检查用户是否有权限访问该节点
+	nodes, err := h.nodeService.GetAccessibleNodes(context.Background(), user.GroupID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取节点权限失败"})
+		return
+	}
+
+	// 检查节点是否在用户可访问的节点列表中
+	nodeAccessible := false
+	for _, n := range nodes {
+		if n.ID == req.NodeID {
+			nodeAccessible = true
+			break
+		}
+	}
+
+	if !nodeAccessible {
+		c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "您没有权限使用该节点"})
+		return
+	}
+
+	// 检查隧道类型是否被节点支持
+	var allowedTypes []string
+	if err := json.Unmarshal([]byte(node.AllowedTypes), &allowedTypes); err != nil {
+		h.logger.Error("Failed to parse allowed_types", "error", err, "value", node.AllowedTypes)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+
+	typeAllowed := false
+	for _, t := range allowedTypes {
+		if strings.EqualFold(t, req.ProxyType) {
+			typeAllowed = true
+			break
+		}
+	}
+
+	if !typeAllowed {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该节点不支持 " + req.ProxyType + " 类型的隧道"})
+		return
+	}
+
+	// 检查同一节点下相同协议类型的隧道是否已经使用了相同的远程端口（排除当前正在编辑的隧道）
+	if req.RemotePort != 0 {
+		isUsed, err := h.proxyService.IsRemotePortUsed(context.Background(), req.NodeID, req.ProxyType, strconv.Itoa(req.RemotePort))
+		if err != nil {
+			h.logger.Error("Failed to check remote port usage", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "检查端口占用失败"})
+			return
+		}
+		// 如果端口被占用，但不是被当前编辑的隧道占用，则返回错误
+		if isUsed && (existingProxy.RemotePort != strconv.Itoa(req.RemotePort) || existingProxy.Node != req.NodeID) {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该节点下已有相同协议类型的隧道使用了端口 " + strconv.Itoa(req.RemotePort) + "，请更换端口"})
+			return
+		}
+	}
+
+	// 根据隧道类型进行不同的验证
+	if req.ProxyType == "http" || req.ProxyType == "https" {
+		// HTTP/HTTPS类型必须填写domain
+		if req.Domain == "" {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "HTTP/HTTPS类型的隧道必须填写域名"})
+			return
+		}
+
+		// HTTP类型remotePort必须为80，HTTPS必须为443
+		expectedPort := 80
+		if req.ProxyType == "https" {
+			expectedPort = 443
+		}
+		if req.RemotePort != expectedPort {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": req.ProxyType + "类型的隧道远程端口必须为" + strconv.Itoa(expectedPort)})
+			return
+		}
+	} else if req.ProxyType == "tcp" || req.ProxyType == "udp" {
+		// TCP/UDP类型需要验证remotePort是否在节点的port_range范围内
+		if req.RemotePort == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "TCP/UDP类型的隧道必须填写远程端口"})
+			return
+		}
+
+		// 解析port_range (格式通常为"10000-25555")
+		portRange := strings.Split(node.PortRange, "-")
+		if len(portRange) != 2 {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "节点端口范围配置错误"})
+			return
+		}
+
+		minPort, err1 := strconv.Atoi(portRange[0])
+		maxPort, err2 := strconv.Atoi(portRange[1])
+		remotePort := req.RemotePort
+
+		if err1 != nil || err2 != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "端口格式错误"})
+			return
+		}
+
+		if remotePort < minPort || remotePort > maxPort {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "远程端口必须在" + node.PortRange + "范围内"})
+			return
+		}
+	}
+
+	// 检查隧道名称是否已被其他隧道使用（不包括当前隧道）
+	if existingProxy.ProxyName != req.ProxyName {
+		otherProxy, err := h.proxyService.GetByUsernameAndName(context.Background(), user.Username, req.ProxyName)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			h.logger.Error("Failed to check existing proxy", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+			return
+		}
+		if otherProxy != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "您已有同名隧道，请更换隧道名称"})
+			return
+		}
+	}
+
+	// 更新隧道对象
+	proxy := &repository.Proxy{
+		ID:                req.ID,
+		Username:          user.Username,
+		ProxyName:         req.ProxyName,
+		ProxyType:         req.ProxyType,
+		LocalIP:           req.LocalIP,
+		LocalPort:         req.LocalPort,
+		UseEncryption:     strconv.FormatBool(req.UseEncryption),
+		UseCompression:    strconv.FormatBool(req.UseCompression),
+		Domain:            req.Domain,
+		HostHeaderRewrite: req.HostHeaderRewrite,
+		RemotePort:        strconv.Itoa(req.RemotePort),
+		HeaderXFromWhere:  req.HeaderXFromWhere,
+		Node:              req.NodeID,
+		Status:            existingProxy.Status, // 保持原有状态
+	}
+
 	// 更新隧道
-	err := h.proxyService.Update(context.Background(), &proxy)
+	err = h.proxyService.Update(context.Background(), proxy)
 	if err != nil {
 		h.logger.Error("Failed to update proxy", "error", err)
 		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "更新隧道失败: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功", "data": gin.H{"id": req.ID}})
 }
 
 // DeleteProxy 删除隧道
@@ -363,26 +520,272 @@ func (h *ProxyHandler) DeleteProxy(c *gin.Context) {
 
 // GetProxyByID 根据ID获取隧道
 func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
-	// 获取隧道ID
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的隧道ID"})
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
 		return
 	}
 
-	// 获取隧道
-	proxy, err := h.proxyService.GetByID(context.Background(), id)
+	// 解析请求参数
+	type GetProxyRequest struct {
+		ID int64 `json:"id"`
+	}
+
+	var req GetProxyRequest
+	// 尝试解析JSON请求体，如果为空或格式错误，则默认返回所有隧道
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		// 只有在不是EOF错误时才返回错误信息
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	// 如果提供了ID，则获取单个隧道
+	if req.ID > 0 {
+		proxy, err := h.proxyService.GetByID(context.Background(), req.ID)
+		if err != nil {
+			h.logger.Error("Failed to get proxy", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道失败: " + err.Error()})
+			return
+		}
+
+		if proxy == nil {
+			c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "隧道不存在"})
+			return
+		}
+
+		// 检查是否是用户自己的隧道
+		if proxy.Username != user.Username {
+			c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "您没有权限查看此隧道"})
+			return
+		}
+
+		// 获取节点信息
+		node, err := h.nodeService.GetByID(context.Background(), proxy.Node)
+		if err != nil {
+			h.logger.Error("Failed to get node", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取节点信息失败"})
+			return
+		}
+
+		// 构建Link
+		remotePort, _ := strconv.Atoi(proxy.RemotePort)
+		link := ""
+		if node.Host != "" {
+			link = node.Host + ":" + proxy.RemotePort
+		} else {
+			link = node.IP + ":" + proxy.RemotePort
+		}
+
+		// 根据隧道类型生成不同的data内容
+		data := ""
+		// 基本配置信息
+		baseConfig := "serverAddr = \"" + node.IP + "\"\n" +
+			"serverPort = " + strconv.Itoa(node.FrpsPort) + "\n" +
+			"user = \"" + proxy.Username + "\"\n" +
+			"metadatas.token = \"" + user.Token + "\"\n"
+
+		switch proxy.ProxyType {
+		case "http":
+			// HTTP类型隧道配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"http\"\n" +
+				"localIP = \"" + proxy.LocalIP + "\"\n" +
+				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n"
+
+			// 添加域名信息
+			if proxy.Domain != "" {
+				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
+			}
+
+		case "https":
+			// HTTPS类型隧道配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"https\"\n"
+
+			// 添加域名信息
+			if proxy.Domain != "" {
+				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
+			}
+
+			// HTTPS插件配置
+			data += "[proxies.plugin]\n" +
+				"type = \"https2http\"\n" +
+				"localAddr = \"" + proxy.LocalIP + ":" + strconv.Itoa(proxy.LocalPort) + "\"\n" +
+				"# HTTPS 证书相关的配置\n" +
+				"crtPath = \"./server.crt\"\n" +
+				"keyPath = \"./server.key\"\n"
+
+			// 添加主机头重写(如果有)
+			if proxy.HostHeaderRewrite != "" {
+				data += "hostHeaderRewrite = \"" + proxy.HostHeaderRewrite + "\"\n"
+			}
+
+			// 添加请求头信息(如果有)
+			if proxy.HeaderXFromWhere != "" {
+				data += "requestHeaders.set.x-from-where = \"" + proxy.HeaderXFromWhere + "\"\n"
+			}
+
+		default: // tcp, udp 和其他类型
+			// 标准配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"" + proxy.ProxyType + "\"\n" +
+				"localIP = \"" + proxy.LocalIP + "\"\n" +
+				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n" +
+				"remotePort = " + proxy.RemotePort + "\n"
+		}
+
+		// 构建返回数据
+		tunnelData := gin.H{
+			"Id":         proxy.ID,
+			"ProxyName":  proxy.ProxyName,
+			"ProxyType":  proxy.ProxyType,
+			"LocalIp":    proxy.LocalIP,
+			"LocalPort":  proxy.LocalPort,
+			"RemotePort": remotePort,
+			"Domains":    proxy.Domain,
+			"Status":     proxy.Status,
+			"NodeName":   node.NodeName,
+			"Link":       link,
+			"Type":       proxy.ProxyType,
+			"Timestamp":  proxy.LastUpdate,
+			"data":       data,
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":   200,
+			"msg":    "获取成功",
+			"tunnel": gin.H{strconv.FormatInt(proxy.ID, 10): tunnelData},
+		})
+		return
+	}
+
+	// 如果没有提供ID，则获取用户的所有隧道
+	proxies, err := h.proxyService.GetByUsername(context.Background(), user.Username)
 	if err != nil {
-		h.logger.Error("Failed to get proxy", "error", err)
-		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道失败: " + err.Error()})
+		h.logger.Error("Failed to get proxies", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道列表失败: " + err.Error()})
 		return
 	}
 
-	if proxy == nil {
-		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "隧道不存在"})
-		return
+	// 构建返回数据
+	tunnels := make(gin.H)
+
+	for _, proxy := range proxies {
+		// 获取节点信息
+		node, err := h.nodeService.GetByID(context.Background(), proxy.Node)
+		if err != nil {
+			h.logger.Warn("Failed to get node info for proxy", "proxyID", proxy.ID, "nodeID", proxy.Node, "error", err)
+			continue
+		}
+
+		// 构建Link
+		remotePort, _ := strconv.Atoi(proxy.RemotePort)
+		link := ""
+		if node.Host != "" {
+			link = node.Host + ":" + proxy.RemotePort
+		} else {
+			link = node.IP + ":" + proxy.RemotePort
+		}
+
+		// 根据隧道类型生成不同的data内容
+		data := ""
+		// 基本配置信息
+		baseConfig := "serverAddr = \"" + node.IP + "\"\n" +
+			"serverPort = " + strconv.Itoa(node.FrpsPort) + "\n" +
+			"user = \"" + proxy.Username + "\"\n" +
+			"metadatas.token = \"" + user.Token + "\"\n"
+
+		switch proxy.ProxyType {
+		case "http":
+			// HTTP类型隧道配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"http\"\n" +
+				"localIP = \"" + proxy.LocalIP + "\"\n" +
+				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n"
+
+			// 添加域名信息
+			if proxy.Domain != "" {
+				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
+			}
+
+		case "https":
+			// HTTPS类型隧道配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"https\"\n"
+
+			// 添加域名信息
+			if proxy.Domain != "" {
+				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
+			}
+
+			// HTTPS插件配置
+			data += "[proxies.plugin]\n" +
+				"type = \"https2http\"\n" +
+				"localAddr = \"" + proxy.LocalIP + ":" + strconv.Itoa(proxy.LocalPort) + "\"\n" +
+				"# HTTPS 证书相关的配置\n" +
+				"crtPath = \"./server.crt\"\n" +
+				"keyPath = \"./server.key\"\n"
+
+			// 添加主机头重写(如果有)
+			if proxy.HostHeaderRewrite != "" {
+				data += "hostHeaderRewrite = \"" + proxy.HostHeaderRewrite + "\"\n"
+			}
+
+			// 添加请求头信息(如果有)
+			if proxy.HeaderXFromWhere != "" {
+				data += "requestHeaders.set.x-from-where = \"" + proxy.HeaderXFromWhere + "\"\n"
+			}
+
+		default: // tcp, udp 和其他类型
+			// 标准配置
+			data = baseConfig +
+				"[[proxies]]\n" +
+				"name = \"" + proxy.ProxyName + "\"\n" +
+				"type = \"" + proxy.ProxyType + "\"\n" +
+				"localIP = \"" + proxy.LocalIP + "\"\n" +
+				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n" +
+				"remotePort = " + proxy.RemotePort + "\n"
+		}
+
+		// 添加隧道信息
+		tunnels[strconv.FormatInt(proxy.ID, 10)] = gin.H{
+			"Id":         proxy.ID,
+			"ProxyName":  proxy.ProxyName,
+			"ProxyType":  proxy.ProxyType,
+			"LocalIp":    proxy.LocalIP,
+			"LocalPort":  proxy.LocalPort,
+			"RemotePort": remotePort,
+			"Domains":    proxy.Domain,
+			"Status":     proxy.Status,
+			"NodeName":   node.NodeName,
+			"Link":       link,
+			"Type":       proxy.ProxyType,
+			"Timestamp":  proxy.LastUpdate,
+			"data":       data,
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": proxy})
+	c.JSON(http.StatusOK, gin.H{
+		"code":   200,
+		"msg":    "获取成功",
+		"tunnel": tunnels,
+	})
 }
