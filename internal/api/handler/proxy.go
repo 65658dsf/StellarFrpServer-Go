@@ -249,7 +249,7 @@ func (h *ProxyHandler) CreateProxy(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"Id": id}})
 }
 
 // UpdateProxy 更新隧道
@@ -313,6 +313,18 @@ func (h *ProxyHandler) UpdateProxy(c *gin.Context) {
 	node, err := h.nodeService.GetByID(context.Background(), req.NodeID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "节点不存在或已下线"})
+		return
+	}
+
+	// 检查当前隧道是否属于请求中指定的节点
+	if existingProxy.Node != req.NodeID {
+		// 获取原节点信息
+		originalNode, err := h.nodeService.GetByID(context.Background(), existingProxy.Node)
+		if err == nil {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该隧道属于 " + originalNode.NodeName + " 节点，不能修改为其他节点"})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该隧道不属于请求中指定的节点"})
+		}
 		return
 	}
 

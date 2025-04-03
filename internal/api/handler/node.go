@@ -81,12 +81,12 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 		// 使用节点ID作为键
 		nodeID := strconv.FormatInt(node.ID, 10)
 		nodeMap[nodeID] = gin.H{
-			"node_name":     node.NodeName,
-			"allowed_types": allowedTypes,
-			"port_range":    node.PortRange,
-			"status":        node.Status,
-			"description":   description,
-			"node_id":       nodeID,
+			"NodeName":     node.NodeName,
+			"AllowedTypes": allowedTypes,
+			"PortRange":    node.PortRange,
+			"Status":       node.Status,
+			"Description":  description,
+			"ID":           nodeID,
 		}
 	}
 
@@ -173,13 +173,13 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to create request", "error", err, "url", apiURL)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"node_name":   node.NodeName,
-					"status":      "offline",
-					"error":       "请求创建失败",
-					"version":     "",
-					"clients":     0,
-					"traffic_in":  "",
-					"traffic_out": "",
+					"NodeName":   node.NodeName,
+					"Status":     "offline",
+					"Error":      "请求创建失败",
+					"Version":    "",
+					"Clients":    0,
+					"TrafficIn":  "",
+					"TrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -194,13 +194,13 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to get node info", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"node_name":   node.NodeName,
-					"status":      "offline",
-					"error":       err.Error(),
-					"version":     "",
-					"clients":     0,
-					"traffic_in":  "",
-					"traffic_out": "",
+					"NodeName":   node.NodeName,
+					"Status":     "offline",
+					"Error":      err.Error(),
+					"Version":    "",
+					"Clients":    0,
+					"TrafficIn":  "",
+					"TrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -213,13 +213,13 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to read response", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"node_name":   node.NodeName,
-					"status":      "offline",
-					"error":       "响应读取失败",
-					"version":     "",
-					"clients":     0,
-					"traffic_in":  "",
-					"traffic_out": "",
+					"NodeName":   node.NodeName,
+					"Status":     "offline",
+					"Error":      "响应读取失败",
+					"Version":    "",
+					"Clients":    0,
+					"TrafficIn":  "",
+					"TrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -231,13 +231,13 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to parse response", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"node_name":   node.NodeName,
-					"status":      "offline",
-					"error":       "响应解析失败",
-					"version":     "",
-					"clients":     0,
-					"traffic_in":  "",
-					"traffic_out": "",
+					"NodeName":   node.NodeName,
+					"Status":     "offline",
+					"Error":      "响应解析失败",
+					"Version":    "",
+					"Clients":    0,
+					"TrafficIn":  "",
+					"TrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -250,12 +250,12 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 			// 保存结果
 			mu.Lock()
 			results[strconv.FormatInt(node.ID, 10)] = gin.H{
-				"node_name":   node.NodeName,
-				"status":      "online",
-				"version":     nodeInfo.Version,
-				"clients":     nodeInfo.ClientCounts,
-				"traffic_in":  trafficIn,
-				"traffic_out": trafficOut,
+				"NodeName":   node.NodeName,
+				"Status":     "online",
+				"Version":    nodeInfo.Version,
+				"Clients":    nodeInfo.ClientCounts,
+				"TrafficIn":  trafficIn,
+				"TrafficOut": trafficOut,
 			}
 			mu.Unlock()
 		}(node)

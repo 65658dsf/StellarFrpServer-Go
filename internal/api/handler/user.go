@@ -306,15 +306,15 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 
 	userInfo := gin.H{
-		"id":            user.ID,
-		"username":      user.Username,
-		"email":         user.Email,
-		"register_time": user.RegisterTime.Format("2006-01-02 15:04:05"),
-		"group_id":      user.GroupID,
-		"group_name":    groupName,
-		"is_verified":   user.IsVerified,
-		"status":        user.Status,
-		"verify_count":  user.VerifyCount,
+		"ID":           user.ID,
+		"Username":     user.Username,
+		"Email":        user.Email,
+		"RegisterTime": user.RegisterTime.Format("2006-01-02 15:04:05"),
+		"GroupID":      user.GroupID,
+		"GroupName":    groupName,
+		"IsVerified":   user.IsVerified,
+		"Status":       user.Status,
+		"VerifyCount":  user.VerifyCount,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})

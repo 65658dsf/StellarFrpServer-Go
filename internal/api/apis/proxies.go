@@ -14,7 +14,7 @@ func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHan
 		// 创建隧道
 		proxies.POST("/create", proxyHandler.CreateProxy)
 		// 更新隧道
-		proxies.PUT("/update", proxyHandler.UpdateProxy)
+		proxies.POST("/edit", proxyHandler.UpdateProxy)
 		// 删除隧道
 		proxies.POST("/delete", proxyHandler.DeleteProxy)
 		// 根据ID获取隧道
