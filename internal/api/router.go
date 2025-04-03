@@ -39,6 +39,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	userRepo := repository.NewUserRepository(db)
 	groupRepo := repository.NewGroupRepository(db)
 	nodeRepo := repository.NewNodeRepository(db)
+	proxyRepo := repository.NewProxyRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -53,10 +54,12 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// 初始化服务
 	userService := service.NewUserService(userRepo, groupRepo, redisClient, worker, emailService, logger)
 	nodeService := service.NewNodeService(nodeRepo)
+	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
 
 	// 初始化处理器
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
+	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -67,7 +70,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	v1 := router.Group("/api/v1")
 
 	// 注册所有API路由
-	apis.RegisterRoutes(v1, userHandler, nodeHandler)
+	apis.RegisterRoutes(v1, userHandler, nodeHandler, proxyHandler)
 
 	return router
 }

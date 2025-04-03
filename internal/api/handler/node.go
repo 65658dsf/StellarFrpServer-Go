@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"stellarfrp/internal/service"
 	"stellarfrp/pkg/logger"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,8 +51,8 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 		return
 	}
 
-	// 构建返回数据
-	nodeList := make([]gin.H, 0, len(nodes))
+	// 构建返回数据 - 使用对象格式，节点ID作为键
+	nodeMap := make(map[string]gin.H)
 	for _, node := range nodes {
 		// 解析AllowedTypes字段，它是JSON格式的字符串
 		var allowedTypes []string
@@ -68,14 +69,17 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 			description = node.Description
 		}
 
-		nodeList = append(nodeList, gin.H{
+		// 使用节点ID作为键
+		nodeID := strconv.FormatInt(node.ID, 10)
+		nodeMap[nodeID] = gin.H{
 			"node_name":     node.NodeName,
 			"allowed_types": allowedTypes,
 			"port_range":    node.PortRange,
 			"status":        node.Status,
 			"description":   description,
-		})
+			"node_id":       nodeID,
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": nodeList})
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": nodeMap})
 }

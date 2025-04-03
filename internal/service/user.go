@@ -30,6 +30,9 @@ type UserService interface {
 	SendEmail(ctx context.Context, email, msgType string) error
 	Login(ctx context.Context, identifier, password string) (*repository.User, error)
 	GetGroupName(ctx context.Context, groupID int64) (string, error)
+	GetGroupTunnelLimit(ctx context.Context, groupID int64) (int, error)
+	GetUserBandwidth(ctx context.Context, userID int64) (int, error)
+	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
 }
 
 // userService 用户服务实现
@@ -237,4 +240,37 @@ func (s *userService) GetGroupName(ctx context.Context, groupID int64) (string, 
 // GetByToken 根据Token获取用户
 func (s *userService) GetByToken(ctx context.Context, token string) (*repository.User, error) {
 	return s.userRepo.GetByToken(ctx, token)
+}
+
+// GetGroupTunnelLimit 获取用户组的隧道数量限制
+func (s *userService) GetGroupTunnelLimit(ctx context.Context, groupID int64) (int, error) {
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return 0, err
+	}
+	return group.TunnelLimit, nil
+}
+
+// GetUserBandwidth 获取用户带宽限制
+func (s *userService) GetUserBandwidth(ctx context.Context, userID int64) (int, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if user.Bandwidth == nil {
+		return 0, nil
+	}
+	return *user.Bandwidth, nil
+}
+
+// GetUserTrafficQuota 获取用户流量配额
+func (s *userService) GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if user.TrafficQuota == nil {
+		return 0, nil
+	}
+	return *user.TrafficQuota, nil
 }

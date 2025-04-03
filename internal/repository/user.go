@@ -25,6 +25,9 @@ type User struct {
 	GroupTime    *time.Time `db:"group_time"`
 	CreatedAt    time.Time  `db:"created_at"`
 	UpdatedAt    time.Time  `db:"updated_at"`
+	TunnelCount  *int       `db:"tunnel_count"`
+	Bandwidth    *int       `db:"bandwidth"`
+	TrafficQuota *int64     `db:"traffic_quota"`
 }
 
 // UserRepository 用户仓库接口
@@ -51,12 +54,13 @@ func NewUserRepository(db *sqlx.DB) UserRepository {
 
 // Create 创建用户
 func (r *userRepository) Create(ctx context.Context, user *User) error {
-	query := `INSERT INTO users (username, password, email, register_time, group_id, is_verified, verify_info, verify_count, status, token, created_at, updated_at) 
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+	query := `INSERT INTO users (username, password, email, register_time, group_id, is_verified, verify_info, verify_count, status, token, created_at, updated_at, tunnel_count, bandwidth, traffic_quota) 
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query,
 		user.Username, user.Password, user.Email,
 		user.GroupID, user.IsVerified, user.VerifyInfo,
-		user.VerifyCount, user.Status, user.Token)
+		user.VerifyCount, user.Status, user.Token,
+		user.TunnelCount, user.Bandwidth, user.TrafficQuota)
 	if err != nil {
 		return err
 	}
@@ -113,10 +117,11 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*User, e
 // Update 更新用户信息
 func (r *userRepository) Update(ctx context.Context, user *User) error {
 	query := `UPDATE users SET username = ?, password = ?, email = ?, register_time = ?, 
-		group_id = ?, is_verified = ?, verify_info = ?, verify_count = ?, status = ?, token = ?, group_time = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		group_id = ?, is_verified = ?, verify_info = ?, verify_count = ?, status = ?, token = ?, group_time = ?, updated_at = CURRENT_TIMESTAMP, tunnel_count = ?, bandwidth = ?, traffic_quota = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query,
 		user.Username, user.Password, user.Email, user.RegisterTime,
-		user.GroupID, user.IsVerified, user.VerifyInfo, user.VerifyCount, user.Status, user.Token, user.GroupTime, user.ID)
+		user.GroupID, user.IsVerified, user.VerifyInfo, user.VerifyCount, user.Status, user.Token, user.GroupTime,
+		user.TunnelCount, user.Bandwidth, user.TrafficQuota, user.ID)
 	return err
 }
 
