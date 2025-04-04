@@ -5,12 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"stellarfrp/internal/repository"
 	"stellarfrp/internal/service"
 	"stellarfrp/pkg/logger"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -67,7 +71,7 @@ func (h *ProxyHandler) CreateProxy(c *gin.Context) {
 
 	var req ProxyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
@@ -287,7 +291,7 @@ func (h *ProxyHandler) UpdateProxy(c *gin.Context) {
 
 	var req ProxyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
@@ -497,7 +501,7 @@ func (h *ProxyHandler) DeleteProxy(c *gin.Context) {
 
 	var req DeleteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
@@ -555,7 +559,7 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 	// 尝试解析JSON请求体，如果为空或格式错误，则默认返回所有隧道
 	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
 		// 只有在不是EOF错误时才返回错误信息
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
@@ -799,5 +803,545 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		"code":   200,
 		"msg":    "获取成功",
 		"tunnel": tunnels,
+	})
+}
+
+// GetProxyStatus 获取隧道状态
+func (h *ProxyHandler) GetProxyStatus(c *gin.Context) {
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
+		return
+	}
+
+	// 解析请求参数
+	type StatusRequest struct {
+		IDs []string `json:"id"`
+	}
+
+	var reqData StatusRequest
+	// 解析JSON请求体，如果为空或格式错误，默认获取所有隧道
+	if err := c.ShouldBindJSON(&reqData); err != nil && err.Error() != "EOF" {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	// 如果ids为空，则获取用户所有隧道
+	if len(reqData.IDs) == 0 {
+		// 获取用户的所有隧道
+		proxies, err := h.proxyService.GetByUsername(context.Background(), user.Username)
+		if err != nil {
+			h.logger.Error("Failed to get user's proxies", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取用户隧道列表失败"})
+			return
+		}
+
+		// 如果用户没有隧道
+		if len(proxies) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": gin.H{}})
+			return
+		}
+
+		// 构建隧道ID列表
+		reqData.IDs = make([]string, len(proxies))
+		for i, proxy := range proxies {
+			reqData.IDs[i] = strconv.FormatInt(proxy.ID, 10)
+		}
+	}
+
+	// 验证所有隧道是否属于该用户并获取对应节点信息
+	proxyNodeMap := make(map[int64]int64)  // 隧道ID -> 节点ID
+	proxyTypeMap := make(map[int64]string) // 隧道ID -> 隧道类型
+	proxyNameMap := make(map[int64]string) // 隧道ID -> 隧道名称
+	nodeNameMap := make(map[int64]string)  // 节点ID -> 节点名称
+
+	for _, idStr := range reqData.IDs {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			h.logger.Error("Invalid proxy ID", "id", idStr, "error", err)
+			continue
+		}
+
+		proxy, err := h.proxyService.GetByID(context.Background(), id)
+		if err != nil {
+			h.logger.Error("Failed to get proxy", "id", id, "error", err)
+			continue
+		}
+
+		if proxy == nil {
+			continue // 隧道不存在，跳过
+		}
+
+		// 验证隧道是否属于该用户
+		if proxy.Username != user.Username {
+			continue // 隧道不属于该用户，跳过
+		}
+
+		// 获取节点信息
+		node, err := h.nodeService.GetByID(context.Background(), proxy.Node)
+		if err != nil {
+			h.logger.Error("Failed to get node", "nodeID", proxy.Node, "error", err)
+			continue
+		}
+
+		// 记录节点名称
+		nodeNameMap[proxy.Node] = node.NodeName
+
+		// 记录隧道ID和对应的节点ID
+		proxyNodeMap[proxy.ID] = proxy.Node
+		proxyTypeMap[proxy.ID] = proxy.ProxyType
+		proxyNameMap[proxy.ID] = proxy.ProxyName
+	}
+
+	if len(proxyNodeMap) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "未找到有效的隧道"})
+		return
+	}
+
+	// 创建HTTP客户端，设置超时
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// 收集结果
+	var mu sync.Mutex
+	results := make(map[string]gin.H)
+
+	// 如果只有一个隧道，直接请求
+	if len(reqData.IDs) == 1 {
+		proxyID, _ := strconv.ParseInt(reqData.IDs[0], 10, 64)
+		nodeID := proxyNodeMap[proxyID]
+		proxyType := proxyTypeMap[proxyID]
+		nodeName := nodeNameMap[nodeID]
+
+		node, err := h.nodeService.GetByID(context.Background(), nodeID)
+		if err != nil {
+			h.logger.Error("Failed to get node", "nodeID", nodeID, "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取节点信息失败"})
+			return
+		}
+
+		// 构建节点API URL - 根据隧道类型请求
+		apiURL := fmt.Sprintf("%s/api/proxy/%s", node.URL, strings.ToLower(proxyType))
+
+		// 创建请求
+		httpReq, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			h.logger.Error("Failed to create request", "error", err, "url", apiURL)
+			c.JSON(http.StatusOK, gin.H{
+				"code": 500,
+				"msg":  "请求创建失败: " + err.Error(),
+				"data": gin.H{},
+			})
+			return
+		}
+
+		// 设置Basic认证
+		httpReq.SetBasicAuth(node.User, node.Token)
+
+		// 发送请求
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			h.logger.Error("Failed to get proxy status", "error", err, "url", apiURL)
+			c.JSON(http.StatusOK, gin.H{
+				"code": 500,
+				"msg":  "获取隧道状态失败: " + err.Error(),
+				"data": gin.H{},
+			})
+			return
+		}
+		defer resp.Body.Close()
+
+		// 读取响应
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			h.logger.Error("Failed to read response", "error", err)
+			c.JSON(http.StatusOK, gin.H{
+				"code": 500,
+				"msg":  "读取响应失败: " + err.Error(),
+				"data": gin.H{},
+			})
+			return
+		}
+
+		// 解析响应
+		var statusResponse map[string]interface{}
+		if err := json.Unmarshal(body, &statusResponse); err != nil {
+			h.logger.Error("Failed to parse response", "error", err, "body", string(body))
+			c.JSON(http.StatusOK, gin.H{
+				"code": 500,
+				"msg":  "解析响应失败: " + err.Error(),
+				"data": gin.H{},
+			})
+			return
+		}
+
+		// 查找对应隧道的状态
+		proxyFoundInResponse := false
+		expectedProxyName := user.Username + "." + proxyNameMap[proxyID]
+
+		proxiesList, ok := statusResponse["proxies"].([]interface{})
+		if !ok {
+			h.logger.Error("Invalid response format", "body", string(body))
+			c.JSON(http.StatusOK, gin.H{
+				"code": 500,
+				"msg":  "节点返回数据格式不正确",
+				"data": gin.H{},
+			})
+			return
+		}
+
+		var proxyStatus interface{}
+		for _, proxyData := range proxiesList {
+			proxyInfo, ok := proxyData.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			name, ok := proxyInfo["name"].(string)
+			if !ok {
+				continue
+			}
+
+			if name == expectedProxyName {
+				proxyStatus = proxyInfo
+				proxyFoundInResponse = true
+				break
+			}
+		}
+
+		if !proxyFoundInResponse {
+			// 没有找到指定隧道的状态信息
+			results[reqData.IDs[0]] = gin.H{
+				"status":          "offline",
+				"proxyId":         proxyID,
+				"proxyName":       proxyNameMap[proxyID],
+				"nodeId":          nodeID,
+				"nodeName":        nodeName,
+				"lastStartTime":   "",
+				"lastCloseTime":   "",
+				"curConns":        0,
+				"todayTrafficIn":  0,
+				"todayTrafficOut": 0,
+			}
+		} else {
+			// 解析并提取所需的特定状态信息
+			proxyInfo, ok := proxyStatus.(map[string]interface{})
+			if !ok {
+				proxyInfo = make(map[string]interface{})
+			}
+
+			// 获取状态信息，默认值为空或0
+			status := "offline"
+			if statusStr, ok := proxyInfo["status"].(string); ok && statusStr == "online" {
+				status = "online"
+			}
+
+			lastStartTime := ""
+			if start, ok := proxyInfo["lastStartTime"].(string); ok {
+				lastStartTime = start
+			}
+
+			lastCloseTime := ""
+			if close, ok := proxyInfo["lastCloseTime"].(string); ok {
+				lastCloseTime = close
+			}
+
+			curConns := 0
+			if conns, ok := proxyInfo["curConns"].(float64); ok {
+				curConns = int(conns)
+			}
+
+			trafficIn := int64(0)
+			if in, ok := proxyInfo["todayTrafficIn"].(float64); ok {
+				trafficIn = int64(in)
+			}
+
+			trafficOut := int64(0)
+			if out, ok := proxyInfo["todayTrafficOut"].(float64); ok {
+				trafficOut = int64(out)
+			}
+
+			// 返回结果
+			results[reqData.IDs[0]] = gin.H{
+				"status":          status,
+				"proxyId":         proxyID,
+				"proxyName":       proxyNameMap[proxyID],
+				"nodeId":          nodeID,
+				"nodeName":        nodeName,
+				"lastStartTime":   lastStartTime,
+				"lastCloseTime":   lastCloseTime,
+				"curConns":        curConns,
+				"todayTrafficIn":  trafficIn,
+				"todayTrafficOut": trafficOut,
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": 200,
+			"msg":  "获取成功",
+			"data": results,
+		})
+		return
+	}
+
+	// 按照隧道类型对隧道进行分组，每个节点的每种隧道类型需要单独请求
+	nodeTypeProxiesMap := make(map[int64]map[string][]int64) // 节点ID -> 类型 -> 隧道ID列表
+
+	for proxyID, nodeID := range proxyNodeMap {
+		proxyType := proxyTypeMap[proxyID]
+
+		if nodeTypeProxiesMap[nodeID] == nil {
+			nodeTypeProxiesMap[nodeID] = make(map[string][]int64)
+		}
+
+		nodeTypeProxiesMap[nodeID][proxyType] = append(nodeTypeProxiesMap[nodeID][proxyType], proxyID)
+	}
+
+	// 多个隧道，使用并发请求
+	var wg sync.WaitGroup
+
+	// 并发请求每个节点的不同类型API
+	for nodeID, typeProxiesMap := range nodeTypeProxiesMap {
+		nodeName := nodeNameMap[nodeID]
+
+		for proxyType, proxyIDs := range typeProxiesMap {
+			wg.Add(1)
+			go func(nodeID int64, nodeName string, proxyType string, proxyIDs []int64) {
+				defer wg.Done()
+
+				node, err := h.nodeService.GetByID(context.Background(), nodeID)
+				if err != nil {
+					h.logger.Error("Failed to get node", "nodeID", nodeID, "error", err)
+					return
+				}
+
+				// 构建节点API URL，根据隧道类型请求
+				apiURL := fmt.Sprintf("%s/api/proxy/%s", node.URL, strings.ToLower(proxyType))
+
+				// 创建请求
+				httpReq, err := http.NewRequest("GET", apiURL, nil)
+				if err != nil {
+					h.logger.Error("Failed to create request", "error", err, "url", apiURL)
+					return
+				}
+
+				// 设置Basic认证
+				httpReq.SetBasicAuth(node.User, node.Token)
+
+				// 发送请求
+				resp, err := client.Do(httpReq)
+				if err != nil {
+					h.logger.Error("Failed to get proxy status", "error", err, "nodeID", nodeID, "proxyType", proxyType)
+
+					// 为该类型的所有隧道设置离线状态
+					mu.Lock()
+					for _, proxyID := range proxyIDs {
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          "offline",
+							"proxyId":         proxyID,
+							"proxyName":       proxyNameMap[proxyID],
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   "",
+							"lastCloseTime":   "",
+							"curConns":        0,
+							"todayTrafficIn":  0,
+							"todayTrafficOut": 0,
+						}
+					}
+					mu.Unlock()
+
+					return
+				}
+				defer resp.Body.Close()
+
+				// 读取响应
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					h.logger.Error("Failed to read response", "error", err, "nodeID", nodeID, "proxyType", proxyType)
+
+					// 为该类型的所有隧道设置离线状态
+					mu.Lock()
+					for _, proxyID := range proxyIDs {
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          "offline",
+							"proxyId":         proxyID,
+							"proxyName":       proxyNameMap[proxyID],
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   "",
+							"lastCloseTime":   "",
+							"curConns":        0,
+							"todayTrafficIn":  0,
+							"todayTrafficOut": 0,
+						}
+					}
+					mu.Unlock()
+
+					return
+				}
+
+				// 解析响应
+				var allProxiesStatus map[string]interface{}
+				if err := json.Unmarshal(body, &allProxiesStatus); err != nil {
+					h.logger.Error("Failed to parse response", "error", err, "body", string(body), "nodeID", nodeID, "proxyType", proxyType)
+
+					// 为该类型的所有隧道设置离线状态
+					mu.Lock()
+					for _, proxyID := range proxyIDs {
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          "offline",
+							"proxyId":         proxyID,
+							"proxyName":       proxyNameMap[proxyID],
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   "",
+							"lastCloseTime":   "",
+							"curConns":        0,
+							"todayTrafficIn":  0,
+							"todayTrafficOut": 0,
+						}
+					}
+					mu.Unlock()
+
+					return
+				}
+
+				// 筛选请求的隧道状态
+				mu.Lock()
+				defer mu.Unlock()
+
+				// 检查allProxiesStatus中是否有proxies键
+				proxiesList, ok := allProxiesStatus["proxies"].([]interface{})
+				if !ok {
+					h.logger.Error("Invalid response format", "body", string(body), "nodeID", nodeID, "proxyType", proxyType)
+
+					// 为该类型的所有隧道设置离线状态
+					for _, proxyID := range proxyIDs {
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          "offline",
+							"proxyId":         proxyID,
+							"proxyName":       proxyNameMap[proxyID],
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   "",
+							"lastCloseTime":   "",
+							"curConns":        0,
+							"todayTrafficIn":  0,
+							"todayTrafficOut": 0,
+						}
+					}
+
+					return
+				}
+
+				// 将隧道列表转换为map以便快速查找
+				proxyStatusMap := make(map[string]interface{})
+				for _, proxyData := range proxiesList {
+					proxyInfo, ok := proxyData.(map[string]interface{})
+					if !ok {
+						continue
+					}
+
+					name, ok := proxyInfo["name"].(string)
+					if !ok {
+						continue
+					}
+
+					proxyStatusMap[name] = proxyInfo
+				}
+
+				for _, proxyID := range proxyIDs {
+					proxyName := proxyNameMap[proxyID]
+					expectedProxyName := user.Username + "." + proxyName
+
+					// 在节点返回的所有代理中查找该代理
+					proxyStatus, found := proxyStatusMap[expectedProxyName]
+					if found {
+						// 解析并提取所需的特定状态信息
+						proxyInfo, ok := proxyStatus.(map[string]interface{})
+						if !ok {
+							proxyInfo = make(map[string]interface{})
+						}
+
+						// 获取状态信息，默认值为空或0
+						status := "offline"
+						if statusStr, ok := proxyInfo["status"].(string); ok && statusStr == "online" {
+							status = "online"
+						}
+
+						lastStartTime := ""
+						if start, ok := proxyInfo["lastStartTime"].(string); ok {
+							lastStartTime = start
+						}
+
+						lastCloseTime := ""
+						if close, ok := proxyInfo["lastCloseTime"].(string); ok {
+							lastCloseTime = close
+						}
+
+						curConns := 0
+						if conns, ok := proxyInfo["curConns"].(float64); ok {
+							curConns = int(conns)
+						}
+
+						trafficIn := int64(0)
+						if in, ok := proxyInfo["todayTrafficIn"].(float64); ok {
+							trafficIn = int64(in)
+						}
+
+						trafficOut := int64(0)
+						if out, ok := proxyInfo["todayTrafficOut"].(float64); ok {
+							trafficOut = int64(out)
+						}
+
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          status,
+							"proxyId":         proxyID,
+							"proxyName":       proxyName,
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   lastStartTime,
+							"lastCloseTime":   lastCloseTime,
+							"curConns":        curConns,
+							"todayTrafficIn":  trafficIn,
+							"todayTrafficOut": trafficOut,
+						}
+					} else {
+						// 未找到代理状态，设置为离线状态
+						results[strconv.FormatInt(proxyID, 10)] = gin.H{
+							"status":          "offline",
+							"proxyId":         proxyID,
+							"proxyName":       proxyName,
+							"nodeId":          nodeID,
+							"nodeName":        nodeName,
+							"lastStartTime":   "",
+							"lastCloseTime":   "",
+							"curConns":        0,
+							"todayTrafficIn":  0,
+							"todayTrafficOut": 0,
+						}
+					}
+				}
+			}(nodeID, nodeName, proxyType, proxyIDs)
+		}
+	}
+
+	// 等待所有goroutine完成
+	wg.Wait()
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "获取成功",
+		"data": results,
 	})
 }
