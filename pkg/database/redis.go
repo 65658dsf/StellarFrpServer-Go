@@ -21,7 +21,7 @@ func NewRedisClient(cfg config.RedisConfig) (*redis.Client, error) {
 	// 验证连接
 	ctx := context.Background()
 	if _, err := client.Ping(ctx).Result(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		return nil, fmt.Errorf("连接Redis服务器失败: %w", err)
 	}
 
 	return client, nil

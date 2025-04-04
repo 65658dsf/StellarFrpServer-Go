@@ -67,7 +67,7 @@ func Load() (*Config, error) {
 	// 加载.env文件
 	err := godotenv.Load()
 	if err != nil {
-		return nil, fmt.Errorf("error loading .env file: %w", err)
+		return nil, fmt.Errorf("加载.env文件失败: %w", err)
 	}
 
 	// 解析数据库配置

@@ -6,6 +6,7 @@ import (
 	"stellarfrp/internal/api/handler"
 	"stellarfrp/internal/middleware"
 	"stellarfrp/internal/repository"
+	"stellarfrp/internal/scheduler"
 	"stellarfrp/internal/service"
 	"stellarfrp/pkg/async"
 	"stellarfrp/pkg/email"
@@ -40,6 +41,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	groupRepo := repository.NewGroupRepository(db)
 	nodeRepo := repository.NewNodeRepository(db)
 	proxyRepo := repository.NewProxyRepository(db)
+	nodeTrafficRepo := repository.NewNodeTrafficRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -55,6 +57,11 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	userService := service.NewUserService(userRepo, groupRepo, redisClient, worker, emailService, logger)
 	nodeService := service.NewNodeService(nodeRepo)
 	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
+	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
+
+	// 初始化节点调度器
+	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
+	nodeScheduler.Start() // 启动节点调度
 
 	// 初始化处理器
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)

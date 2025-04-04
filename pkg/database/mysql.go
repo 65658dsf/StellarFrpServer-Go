@@ -19,7 +19,7 @@ func NewMySQLConnection(cfg config.DatabaseConfig) (*sqlx.DB, error) {
 	// 连接数据库
 	db, err := sqlx.Connect("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("连接数据库失败: %w", err)
 	}
 
 	// 配置连接池
@@ -30,7 +30,7 @@ func NewMySQLConnection(cfg config.DatabaseConfig) (*sqlx.DB, error) {
 
 	// 验证连接
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, fmt.Errorf("数据库连接测试失败: %w", err)
 	}
 
 	return db, nil

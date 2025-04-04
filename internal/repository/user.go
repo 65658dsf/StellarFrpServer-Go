@@ -79,7 +79,7 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*User, error) {
 	err := r.db.GetContext(ctx, user, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("user not found")
+			return nil, errors.New("用户不存在")
 		}
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (r *userRepository) GetByUsername(ctx context.Context, username string) (*U
 	err := r.db.GetContext(ctx, user, query, username)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("user not found")
+			return nil, errors.New("用户不存在")
 		}
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*User, e
 	err := r.db.GetContext(ctx, user, query, email)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("user not found")
+			return nil, errors.New("用户不存在")
 		}
 		return nil, err
 	}
