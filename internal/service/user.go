@@ -34,6 +34,7 @@ type UserService interface {
 	GetUserBandwidth(ctx context.Context, userID int64) (int, error)
 	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
 	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
+	ResetToken(ctx context.Context, identifier, password string) (*repository.User, error)
 }
 
 // userService 用户服务实现
@@ -288,4 +289,38 @@ func (s *userService) GetUserGroup(ctx context.Context, userID int64) (*reposito
 	}
 
 	return s.groupRepo.GetByID(ctx, user.GroupID)
+}
+
+// ResetToken 重置用户token
+func (s *userService) ResetToken(ctx context.Context, identifier, password string) (*repository.User, error) {
+	// 尝试通过用户名或邮箱获取用户
+	var user *repository.User
+	var err error
+
+	// 先尝试用户名登录
+	user, err = s.userRepo.GetByUsername(ctx, identifier)
+	if err != nil && err.Error() == "用户不存在" {
+		// 如果用户名不存在，尝试邮箱登录
+		user, err = s.userRepo.GetByEmail(ctx, identifier)
+		if err != nil {
+			return nil, errors.New("用户不存在")
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	// 验证密码
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return nil, errors.New("密码错误")
+	}
+
+	// 生成新的32位随机token
+	user.Token = rand.String(32)
+
+	// 更新用户token
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }

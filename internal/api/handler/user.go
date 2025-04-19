@@ -405,3 +405,34 @@ func (h *UserHandler) SendMessage(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "验证码已发送"})
 }
+
+// ResetTokenRequest 重置Token请求
+type ResetTokenRequest struct {
+	Account  string `json:"account" binding:"required"`  // 用户名或邮箱
+	Password string `json:"password" binding:"required"` // 密码
+}
+
+// ResetToken 重置用户Token
+func (h *UserHandler) ResetToken(c *gin.Context) {
+	var req ResetTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	// 调用重置Token服务
+	user, err := h.userService.ResetToken(context.Background(), req.Account, req.Password)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": err.Error()})
+		return
+	}
+
+	// 返回新的token
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "Token重置成功",
+		"data": gin.H{
+			"token": user.Token,
+		},
+	})
+}
