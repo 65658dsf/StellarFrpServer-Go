@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterRoutes 注册所有API路由
-func RegisterRoutes(v1 *gin.RouterGroup, userHandler *handler.UserHandler, nodeHandler *handler.NodeHandler, proxyHandler *handler.ProxyHandler) {
+func RegisterRoutes(v1 *gin.RouterGroup, userHandler *handler.UserHandler, nodeHandler *handler.NodeHandler, proxyHandler *handler.ProxyHandler, proxyAuthHandler *handler.ProxyAuthHandler) {
 	// 注册用户相关路由
 	RegisterUserRoutes(v1, userHandler)
 
@@ -15,5 +15,5 @@ func RegisterRoutes(v1 *gin.RouterGroup, userHandler *handler.UserHandler, nodeH
 	RegisterNodeRoutes(v1, nodeHandler)
 
 	// 注册隧道相关路由
-	RegisterProxyRoutes(v1, proxyHandler)
+	RegisterProxyRoutes(v1, proxyHandler, proxyAuthHandler)
 }

@@ -69,6 +69,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
+	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, logger) // 初始化隧道鉴权处理器
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -79,7 +80,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	v1 := router.Group("/api/v1")
 
 	// 注册所有API路由
-	apis.RegisterRoutes(v1, userHandler, nodeHandler, proxyHandler)
+	apis.RegisterRoutes(v1, userHandler, nodeHandler, proxyHandler, proxyAuthHandler)
 
 	return router
 }

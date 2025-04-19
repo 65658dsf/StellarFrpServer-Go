@@ -33,6 +33,7 @@ type UserService interface {
 	GetGroupTunnelLimit(ctx context.Context, groupID int64) (int, error)
 	GetUserBandwidth(ctx context.Context, userID int64) (int, error)
 	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
+	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
 }
 
 // userService 用户服务实现
@@ -198,7 +199,7 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 
 	// 先尝试用户名登录
 	user, err = s.userRepo.GetByUsername(ctx, identifier)
-	if err != nil && err.Error() == "user not found" {
+	if err != nil && err.Error() == "用户不存在" {
 		// 如果用户名不存在，尝试邮箱登录
 		user, err = s.userRepo.GetByEmail(ctx, identifier)
 		if err != nil {
@@ -273,4 +274,18 @@ func (s *userService) GetUserTrafficQuota(ctx context.Context, userID int64) (in
 		return 0, nil
 	}
 	return *user.TrafficQuota, nil
+}
+
+// GetUserGroup 获取用户所属的用户组
+func (s *userService) GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	return s.groupRepo.GetByID(ctx, user.GroupID)
 }

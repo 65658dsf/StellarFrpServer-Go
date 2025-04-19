@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"stellarfrp/internal/repository"
 )
 
@@ -17,6 +18,7 @@ type ProxyService interface {
 	Count(ctx context.Context) (int, error)
 	IsRemotePortUsed(ctx context.Context, nodeID int64, proxyType string, remotePort string) (bool, error)
 	GetUserProxyCount(ctx context.Context, username string) (int, error)
+	CheckUserNodeAccess(ctx context.Context, username string, nodeID int64) (bool, error)
 }
 
 // proxyService 隧道服务实现
@@ -87,4 +89,44 @@ func (s *proxyService) GetUserProxyCount(ctx context.Context, username string) (
 		return 0, err
 	}
 	return len(proxies), nil
+}
+
+// CheckUserNodeAccess 检查用户是否有权限使用特定节点
+func (s *proxyService) CheckUserNodeAccess(ctx context.Context, username string, nodeID int64) (bool, error) {
+	// 获取节点信息
+	node, err := s.nodeService.GetByID(ctx, nodeID)
+	if err != nil {
+		return false, err
+	}
+	if node == nil {
+		return false, errors.New("节点不存在")
+	}
+
+	// 如果是公共节点(权限为0)，所有用户都可以访问
+	if node.Permission == 0 {
+		return true, nil
+	}
+
+	// 获取用户信息
+	user, err := s.userService.GetByUsername(ctx, username)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, errors.New("用户不存在")
+	}
+
+	// 获取用户组信息
+	group, err := s.userService.GetUserGroup(ctx, user.ID)
+	if err != nil {
+		return false, err
+	}
+	if group == nil {
+		return false, errors.New("用户组不存在")
+	}
+
+	// 检查用户组权限是否足够访问此节点
+	// 节点的Permission值表示可以访问此节点的最低用户组ID
+	// 用户组ID越小，权限越高
+	return group.ID <= node.Permission, nil
 }

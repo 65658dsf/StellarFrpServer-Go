@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterProxyRoutes 注册隧道相关路由
-func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHandler) {
+func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHandler, proxyAuthHandler *handler.ProxyAuthHandler) {
 	// 隧道相关路由
 	proxies := router.Group("/proxy")
 	{
@@ -21,5 +21,7 @@ func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHan
 		proxies.GET("/get", proxyHandler.GetProxyByID)
 		// 获取隧道状态
 		proxies.POST("/status", proxyHandler.GetProxyStatus)
+		// 注册FRP隧道鉴权路由
+		proxies.POST("/auth", proxyAuthHandler.HandleProxyAuth)
 	}
 }
