@@ -21,6 +21,8 @@ func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHan
 		proxies.GET("/get", proxyHandler.GetProxyByID)
 		// 获取隧道状态
 		proxies.POST("/status", proxyHandler.GetProxyStatus)
+		// 关闭隧道
+		proxies.POST("/close", proxyHandler.CloseProxy)
 		// 注册FRP隧道鉴权路由
 		proxies.POST("/auth", proxyAuthHandler.HandleProxyAuth)
 	}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -1155,5 +1156,146 @@ func (h *ProxyHandler) GetProxyStatus(c *gin.Context) {
 		"code": 200,
 		"msg":  "获取成功",
 		"data": results,
+	})
+}
+
+// CloseProxy 关闭隧道
+func (h *ProxyHandler) CloseProxy(c *gin.Context) {
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
+		return
+	}
+
+	// 解析请求参数
+	type CloseRequest struct {
+		ID int64 `json:"id" binding:"required"`
+	}
+
+	var req CloseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	// 根据ID获取隧道信息
+	proxy, err := h.proxyService.GetByID(context.Background(), req.ID)
+	if err != nil {
+		h.logger.Error("获取隧道信息失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道信息失败"})
+		return
+	}
+
+	if proxy == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "隧道不存在"})
+		return
+	}
+
+	// 验证隧道是否属于该用户
+	if proxy.Username != user.Username {
+		c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "您没有权限操作该隧道"})
+		return
+	}
+
+	// 如果隧道没有runID，说明没有运行
+	if proxy.RunID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该隧道未运行"})
+		return
+	}
+
+	// 获取节点信息
+	node, err := h.nodeService.GetByID(context.Background(), proxy.Node)
+	if err != nil {
+		h.logger.Error("获取节点信息失败", "error", err, "nodeID", proxy.Node)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取节点信息失败"})
+		return
+	}
+
+	// 构建请求体
+	requestBody, err := json.Marshal(map[string]string{
+		"runid": proxy.RunID,
+	})
+	if err != nil {
+		h.logger.Error("构建请求体失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+
+	// 构建API URL
+	apiURL := fmt.Sprintf("%s/api/client/kick", node.URL)
+
+	// 创建HTTP客户端，设置超时
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// 创建请求
+	req2, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+	if err != nil {
+		h.logger.Error("创建请求失败", "error", err, "url", apiURL)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+
+	// 设置请求头
+	req2.Header.Set("Content-Type", "application/json")
+	// 设置Basic认证
+	req2.SetBasicAuth(node.User, node.Token)
+
+	// 发送请求
+	resp, err := client.Do(req2)
+	if err != nil {
+		h.logger.Error("发送请求失败", "error", err, "url", apiURL)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "关闭隧道请求失败"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.logger.Error("读取响应失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "读取响应失败"})
+		return
+	}
+
+	// 解析响应
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		h.logger.Error("解析响应失败", "error", err, "body", string(body))
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "解析响应失败"})
+		return
+	}
+
+	// 检查响应是否成功
+	if resp.StatusCode != http.StatusOK {
+		h.logger.Error("节点返回错误", "statusCode", resp.StatusCode, "response", string(body))
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "节点返回错误"})
+		return
+	}
+
+	// 成功关闭隧道后，更新隧道状态
+	proxy.RunID = ""
+	proxy.Status = "offline"
+	if err := h.proxyService.Update(context.Background(), proxy); err != nil {
+		h.logger.Error("更新隧道状态失败", "error", err)
+		// 不返回错误，因为隧道已经成功关闭
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "隧道已成功关闭",
+		"data": gin.H{
+			"id":        proxy.ID,
+			"proxyName": proxy.ProxyName,
+		},
 	})
 }
