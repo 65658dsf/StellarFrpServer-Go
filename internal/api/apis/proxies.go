@@ -18,7 +18,7 @@ func RegisterProxyRoutes(router *gin.RouterGroup, proxyHandler *handler.ProxyHan
 		// 删除隧道
 		proxies.POST("/delete", proxyHandler.DeleteProxy)
 		// 获取隧道
-		proxies.POST("/get", proxyHandler.GetProxyByID)
+		proxies.GET("/get", proxyHandler.GetProxyByID)
 		// 获取隧道状态
 		proxies.POST("/status", proxyHandler.GetProxyStatus)
 	}

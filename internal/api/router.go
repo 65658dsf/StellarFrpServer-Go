@@ -42,6 +42,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeRepo := repository.NewNodeRepository(db)
 	proxyRepo := repository.NewProxyRepository(db)
 	nodeTrafficRepo := repository.NewNodeTrafficRepository(db)
+	userTrafficRepo := repository.NewUserTrafficRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -58,9 +59,10 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeService := service.NewNodeService(nodeRepo)
 	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
+	userTrafficService := service.NewUserTrafficService(userRepo, proxyRepo, nodeRepo, groupRepo, userTrafficRepo, logger)
 
 	// 初始化节点调度器
-	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
+	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, userTrafficService, logger)
 	nodeScheduler.Start() // 启动节点调度
 
 	// 初始化处理器
