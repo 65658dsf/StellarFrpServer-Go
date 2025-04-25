@@ -43,6 +43,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	proxyRepo := repository.NewProxyRepository(db)
 	nodeTrafficRepo := repository.NewNodeTrafficRepository(db)
 	userTrafficRepo := repository.NewUserTrafficRepository(db)
+	userCheckinRepo := repository.NewUserCheckinRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -60,6 +61,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
 	userTrafficService := service.NewUserTrafficService(userRepo, proxyRepo, nodeRepo, groupRepo, userTrafficRepo, logger)
+	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, logger)
 
 	// 初始化节点调度器
 	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, userTrafficService, logger)
@@ -67,6 +69,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 
 	// 初始化处理器
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)
+	userCheckinHandler := handler.NewUserCheckinHandler(userService, userCheckinService, logger)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
 	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, logger) // 初始化隧道鉴权处理器
@@ -80,7 +83,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	v1 := router.Group("/api/v1")
 
 	// 注册所有API路由
-	apis.RegisterRoutes(v1, userHandler, nodeHandler, proxyHandler, proxyAuthHandler)
+	apis.RegisterRoutes(v1, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)
 
 	return router
 }

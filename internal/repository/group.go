@@ -11,13 +11,15 @@ import (
 
 // Group 用户组模型
 type Group struct {
-	ID             int64     `db:"id"`
-	Name           string    `db:"name"`
-	TunnelLimit    int       `db:"tunnel_limit"`
-	BandwidthLimit int       `db:"bandwidth_limit"`
-	TrafficQuota   int64     `db:"traffic_quota"`
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
+	ID                int64     `db:"id"`
+	Name              string    `db:"name"`
+	TunnelLimit       int       `db:"tunnel_limit"`
+	BandwidthLimit    int       `db:"bandwidth_limit"`
+	TrafficQuota      int64     `db:"traffic_quota"`
+	CheckinMinTraffic int64     `db:"checkin_min_traffic"` // 签到最小流量(字节)
+	CheckinMaxTraffic int64     `db:"checkin_max_traffic"` // 签到最大流量(字节)
+	CreatedAt         time.Time `db:"created_at"`
+	UpdatedAt         time.Time `db:"updated_at"`
 }
 
 // GroupRepository 用户组仓库接口
