@@ -35,6 +35,7 @@ type UserService interface {
 	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
 	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
 	ResetToken(ctx context.Context, identifier, password string) (*repository.User, error)
+	GetGroupTraffic(ctx context.Context, groupID int64) (int64, error)
 }
 
 // userService 用户服务实现
@@ -323,4 +324,13 @@ func (s *userService) ResetToken(ctx context.Context, identifier, password strin
 	}
 
 	return user, nil
+}
+
+// GetGroupTraffic 获取用户组的流量
+func (s *userService) GetGroupTraffic(ctx context.Context, groupID int64) (int64, error) {
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return 0, err
+	}
+	return group.TrafficQuota, nil
 }

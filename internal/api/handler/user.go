@@ -305,6 +305,22 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		h.logger.Error("Failed to get group name", "error", err)
 	}
 
+	// 获取用户组流量
+	groupTraffic, err := h.userService.GetGroupTraffic(context.Background(), user.GroupID)
+	if err != nil {
+		h.logger.Error("Failed to get group traffic", "error", err)
+		groupTraffic = 0
+	}
+
+	// 获取用户自身的额外流量
+	userTraffic := int64(0)
+	if user.TrafficQuota != nil {
+		userTraffic = *user.TrafficQuota
+	}
+
+	// 计算总流量
+	totalTraffic := groupTraffic + userTraffic
+
 	userInfo := gin.H{
 		"ID":           user.ID,
 		"Username":     user.Username,
@@ -315,6 +331,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"IsVerified":   user.IsVerified,
 		"Status":       user.Status,
 		"VerifyCount":  user.VerifyCount,
+		"Traffic":      totalTraffic, // 添加总流量信息
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})

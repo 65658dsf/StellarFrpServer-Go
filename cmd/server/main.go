@@ -21,7 +21,7 @@ func main() {
 	// 加载配置
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("加载配置文件失败: %v", err)
 	}
 
 	// 初始化日志
@@ -31,14 +31,14 @@ func main() {
 	// 初始化数据库连接
 	db, err := database.NewMySQLConnection(cfg.Database)
 	if err != nil {
-		logger.Fatal("Failed to connect to database", err)
+		logger.Fatal("无法链接到数据库", err)
 	}
 	defer db.Close()
 
 	// 初始化Redis连接
 	redisClient, err := database.NewRedisClient(cfg.Redis)
 	if err != nil {
-		logger.Fatal("Failed to connect to Redis", err)
+		logger.Fatal("无法链接到Redis", err)
 	}
 	defer redisClient.Close()
 
