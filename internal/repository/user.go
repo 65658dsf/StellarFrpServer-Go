@@ -11,26 +11,26 @@ import (
 
 // User 用户模型
 type User struct {
-	ID                int64      `db:"id"`
-	Username          string     `db:"username"`
-	Password          string     `db:"password"`
-	Email             string     `db:"email"`
-	RegisterTime      time.Time  `db:"register_time"`
-	GroupID           int64      `db:"group_id"`
-	IsVerified        int        `db:"is_verified"`
-	VerifyInfo        string     `db:"verify_info"`
-	VerifyCount       int        `db:"verify_count"`
-	Status            int        `db:"status"`
-	Token             string     `db:"token"`
-	GroupTime         *time.Time `db:"group_time"`
-	CreatedAt         time.Time  `db:"created_at"`
-	UpdatedAt         time.Time  `db:"updated_at"`
-	TunnelCount       *int       `db:"tunnel_count"`
-	Bandwidth         *int       `db:"bandwidth"`
-	TrafficQuota      *int64     `db:"traffic_quota"`
-	LastCheckin       *time.Time `db:"last_checkin"`       // 最后签到日期
-	CheckinCount      int        `db:"checkin_count"`      // 签到总次数
-	ContinuityCheckin int        `db:"continuity_checkin"` // 连续签到天数
+	ID                int64          `db:"id"`
+	Username          string         `db:"username"`
+	Password          string         `db:"password"`
+	Email             string         `db:"email"`
+	RegisterTime      time.Time      `db:"register_time"`
+	GroupID           int64          `db:"group_id"`
+	IsVerified        int            `db:"is_verified"`
+	VerifyInfo        sql.NullString `db:"verify_info"`
+	VerifyCount       int            `db:"verify_count"`
+	Status            int            `db:"status"`
+	Token             string         `db:"token"`
+	GroupTime         *time.Time     `db:"group_time"`
+	CreatedAt         time.Time      `db:"created_at"`
+	UpdatedAt         time.Time      `db:"updated_at"`
+	TunnelCount       *int           `db:"tunnel_count"`
+	Bandwidth         *int           `db:"bandwidth"`
+	TrafficQuota      *int64         `db:"traffic_quota"`
+	LastCheckin       *time.Time     `db:"last_checkin"`       // 最后签到日期
+	CheckinCount      int            `db:"checkin_count"`      // 签到总次数
+	ContinuityCheckin int            `db:"continuity_checkin"` // 连续签到天数
 }
 
 // UserRepository 用户仓库接口

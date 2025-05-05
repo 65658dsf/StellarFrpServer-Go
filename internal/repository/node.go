@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"stellarfrp/internal/utils"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -18,7 +19,7 @@ type Node struct {
 	Token        string         `db:"token"`
 	User         string         `db:"user"`
 	Description  sql.NullString `db:"description"`
-	Permission   int64          `db:"permission"`
+	Permission   string         `db:"permission"`    // JSON格式的字符串，如["1","2"]表示权限组IDs
 	AllowedTypes string         `db:"allowed_types"` // JSON格式的字符串，如["TCP","UDP"]
 	Host         sql.NullString `db:"host"`
 	PortRange    string         `db:"port_range"`
@@ -109,15 +110,32 @@ func (r *nodeRepository) GetByUser(ctx context.Context, user string) ([]*Node, e
 }
 
 // GetByPermission 根据权限获取节点列表
-// permission参数表示用户组ID，返回权限值为0(公共节点)或小于等于用户组ID的所有节点
+// permission参数表示用户组ID，返回权限为空数组(公共节点)或权限数组中包含用户组ID的所有节点
 func (r *nodeRepository) GetByPermission(ctx context.Context, permission int64) ([]*Node, error) {
 	nodes := []*Node{}
-	query := `SELECT * FROM nodes WHERE permission = 0 OR permission <= ?`
-	err := r.db.SelectContext(ctx, &nodes, query, permission)
+	// 首先获取所有节点
+	query := `SELECT * FROM nodes`
+	err := r.db.SelectContext(ctx, &nodes, query)
 	if err != nil {
 		return nil, err
 	}
-	return nodes, nil
+
+	// 过滤出权限为空数组(公共节点)或权限数组中包含用户组ID的节点
+	var filteredNodes []*Node
+
+	for _, node := range nodes {
+		// 使用工具函数判断用户组是否有权限访问节点
+		hasAccess, err := utils.IsGroupInPermission(permission, node.Permission)
+		if err != nil {
+			continue // 如果解析出错，跳过该节点
+		}
+
+		if hasAccess {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	return filteredNodes, nil
 }
 
 // Update 更新节点信息

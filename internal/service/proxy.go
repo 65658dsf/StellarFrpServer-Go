@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"stellarfrp/internal/repository"
+	"stellarfrp/internal/utils"
 )
 
 // ProxyService 隧道服务接口
@@ -102,11 +103,6 @@ func (s *proxyService) CheckUserNodeAccess(ctx context.Context, username string,
 		return false, errors.New("节点不存在")
 	}
 
-	// 如果是公共节点(权限为0)，所有用户都可以访问
-	if node.Permission == 0 {
-		return true, nil
-	}
-
 	// 获取用户信息
 	user, err := s.userService.GetByUsername(ctx, username)
 	if err != nil {
@@ -125,8 +121,6 @@ func (s *proxyService) CheckUserNodeAccess(ctx context.Context, username string,
 		return false, errors.New("用户组不存在")
 	}
 
-	// 检查用户组权限是否足够访问此节点
-	// 节点的Permission值表示可以访问此节点的最低用户组ID
-	// 用户组ID越小，权限越高
-	return group.ID <= node.Permission, nil
+	// 使用工具函数检查用户组ID是否在节点的权限组列表中
+	return utils.IsGroupInPermission(group.ID, node.Permission)
 }

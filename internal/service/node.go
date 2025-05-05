@@ -41,7 +41,7 @@ func (s *nodeService) GetByUser(ctx context.Context, user string) ([]*repository
 }
 
 // GetAccessibleNodes 获取用户组可访问的所有节点
-// 包括公共节点(permission=0)和权限值小于等于用户组ID的节点
+// 包括公共节点(permission=[]或空)和权限数组中包含用户组ID的节点
 func (s *nodeService) GetAccessibleNodes(ctx context.Context, groupID int64) ([]*repository.Node, error) {
 	return s.nodeRepo.GetByPermission(ctx, groupID)
 }

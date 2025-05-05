@@ -64,6 +64,15 @@ def migrate_users():
             # 创建默认值
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
+            # 确保 email 和 verify_info 不为 NULL
+            email = user.get('email', '')
+            if email is None:
+                email = ''
+                
+            verify_info = user.get('encrypted_identity_info', '')
+            if verify_info is None:
+                verify_info = ''
+            
             # 检查目标数据库中是否已存在该用户
             target_cursor.execute("SELECT id, token FROM users WHERE username = %s", (user['username'],))
             existing_user = target_cursor.fetchone()
@@ -80,9 +89,9 @@ def migrate_users():
                 
                 target_cursor.execute(query, (
                     user.get('password', ''),
-                    user.get('email', ''),
+                    email,
                     group_id,
-                    user.get('encrypted_identity_info', ''),
+                    verify_info,
                     is_verified,
                     user.get('auth_count', 0),
                     now,
@@ -101,8 +110,8 @@ def migrate_users():
                 INSERT INTO users 
                 (username, password, email, register_time, group_id, is_verified, 
                 verify_info, verify_count, status, created_at, updated_at, group_time,
-                token, tunnel_count, bandwidth, traffic_quota, checkin_count, continuity_checkin)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                tunnel_count, bandwidth, traffic_quota, checkin_count, continuity_checkin)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 
                 register_time = user.get('created_at', now)
@@ -110,23 +119,25 @@ def migrate_users():
                 target_cursor.execute(query, (
                     user.get('username', ''),
                     user.get('password', ''),
-                    user.get('email', ''),
+                    email,
                     register_time,
                     group_id,
                     is_verified,
-                    user.get('encrypted_identity_info', ''),
+                    verify_info,
                     user.get('auth_count', 0),
                     1,  # status默认为1（启用）
                     register_time,
                     now,
                     group_time,
-                    user.get('token', ''),
                     0,  # tunnel_count默认为0
                     0,  # bandwidth默认为0
                     0,  # traffic_quota默认为0
                     0,  # checkin_count默认为0
                     0   # continuity_checkin默认为0
                 ))
+        
+        # 清空以"6dH+"开头的token
+        clean_specific_tokens(target_conn)
         
         # 提交事务
         target_conn.commit()
@@ -144,5 +155,34 @@ def migrate_users():
         target_cursor.close()
         target_conn.close()
 
+def clean_specific_tokens(conn):
+    """清除以'6dH+'开头的token"""
+    cursor = conn.cursor()
+    try:
+        # 查询所有token
+        cursor.execute("SELECT id, token FROM users WHERE token IS NOT NULL AND token != ''")
+        users = cursor.fetchall()
+        
+        cleaned_count = 0
+        for user in users:
+            user_id, token = user
+            if token and token.startswith('6dH+'):
+                cursor.execute("UPDATE users SET token = '' WHERE id = %s", (user_id,))
+                cleaned_count += 1
+        
+        print(f"已清空 {cleaned_count} 个以'6dH+'开头的token")
+    except Exception as e:
+        print(f"清空token时出错: {e}")
+        raise
+    finally:
+        cursor.close()
+
 if __name__ == "__main__":
-    migrate_users()
+    print("1、迁移用户\n2、迁移隧道\n3、迁移节点")
+    msg = input("请输入要迁移的序号:")
+    if msg == "1":
+        migrate_users()
+    elif msg == "2":
+        migrate_tunnels()
+    elif msg == "3":
+        migrate_nodes()
