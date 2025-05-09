@@ -42,8 +42,8 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeRepo := repository.NewNodeRepository(db)
 	proxyRepo := repository.NewProxyRepository(db)
 	nodeTrafficRepo := repository.NewNodeTrafficRepository(db)
-	userTrafficRepo := repository.NewUserTrafficRepository(db)
 	userCheckinRepo := repository.NewUserCheckinRepository(db)
+	userTrafficLogRepo := repository.NewUserTrafficLogRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -56,16 +56,20 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	}, logger)
 
 	// 初始化服务
-	userService := service.NewUserService(userRepo, groupRepo, redisClient, worker, emailService, logger)
+	userService := service.NewUserService(userRepo, groupRepo, userTrafficLogRepo, redisClient, worker, emailService, logger)
 	nodeService := service.NewNodeService(nodeRepo)
 	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
-	userTrafficService := service.NewUserTrafficService(userRepo, proxyRepo, nodeRepo, groupRepo, userTrafficRepo, logger)
 	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, logger)
+	userTrafficLogService := service.NewUserTrafficLogService(nodeRepo, userTrafficLogRepo, logger)
 
 	// 初始化节点调度器
-	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, userTrafficService, logger)
+	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
 	nodeScheduler.Start() // 启动节点调度
+
+	// 初始化流量记录调度器
+	trafficScheduler := scheduler.NewTrafficScheduler(userTrafficLogService, logger)
+	trafficScheduler.Start() // 启动流量记录调度
 
 	// 初始化处理器
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)

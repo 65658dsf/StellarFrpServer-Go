@@ -36,34 +36,38 @@ type UserService interface {
 	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
 	ResetToken(ctx context.Context, identifier, password string) (*repository.User, error)
 	GetGroupTraffic(ctx context.Context, groupID int64) (int64, error)
+	GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error)
 }
 
 // userService 用户服务实现
 type userService struct {
-	userRepo    repository.UserRepository
-	groupRepo   repository.GroupRepository
-	redisClient *redis.Client
-	emailSvc    *email.Service
-	logger      *logger.Logger
-	worker      *async.Worker
+	userRepo        repository.UserRepository
+	groupRepo       repository.GroupRepository
+	userTrafficRepo repository.UserTrafficLogRepository
+	redisClient     *redis.Client
+	emailSvc        *email.Service
+	logger          *logger.Logger
+	worker          *async.Worker
 }
 
 // NewUserService 创建用户服务实例
 func NewUserService(
 	userRepo repository.UserRepository,
 	groupRepo repository.GroupRepository,
+	userTrafficRepo repository.UserTrafficLogRepository,
 	redisClient *redis.Client,
 	worker *async.Worker,
 	emailSvc *email.Service,
 	logger *logger.Logger,
 ) UserService {
 	return &userService{
-		userRepo:    userRepo,
-		groupRepo:   groupRepo,
-		redisClient: redisClient,
-		worker:      worker,
-		emailSvc:    emailSvc,
-		logger:      logger,
+		userRepo:        userRepo,
+		groupRepo:       groupRepo,
+		userTrafficRepo: userTrafficRepo,
+		redisClient:     redisClient,
+		worker:          worker,
+		emailSvc:        emailSvc,
+		logger:          logger,
 	}
 }
 
@@ -333,4 +337,26 @@ func (s *userService) GetGroupTraffic(ctx context.Context, groupID int64) (int64
 		return 0, err
 	}
 	return group.TrafficQuota, nil
+}
+
+// GetUserUsedTraffic 获取用户已使用的流量
+func (s *userService) GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+
+	// 通过用户名获取流量日志
+	trafficLog, err := s.userTrafficRepo.GetByUsername(ctx, user.Username)
+	if err != nil {
+		s.logger.Error("Failed to get user traffic log", "error", err)
+		return 0, err
+	}
+
+	// 如果没有流量记录，返回0
+	if trafficLog == nil {
+		return 0, nil
+	}
+
+	return trafficLog.TotalTraffic, nil
 }

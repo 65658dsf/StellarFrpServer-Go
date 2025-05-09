@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"regexp"
 	"stellarfrp/internal/repository"
@@ -117,7 +118,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		Status:      1, // 正常状态
 		GroupID:     1, // 默认用户组
 		IsVerified:  0, // 未实名认证
-		VerifyInfo:  "",
+		VerifyInfo:  sql.NullString{String: "", Valid: true},
 		VerifyCount: 0,
 		Token:       rand.String(32), // 生成随机Token
 	}
@@ -321,6 +322,13 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	// 计算总流量
 	totalTraffic := groupTraffic + userTraffic
 
+	// 获取用户已使用的流量
+	usedTraffic, err := h.userService.GetUserUsedTraffic(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("Failed to get user used traffic", "error", err)
+		usedTraffic = 0
+	}
+
 	userInfo := gin.H{
 		"ID":           user.ID,
 		"Username":     user.Username,
@@ -331,7 +339,8 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"IsVerified":   user.IsVerified,
 		"Status":       user.Status,
 		"VerifyCount":  user.VerifyCount,
-		"Traffic":      totalTraffic, // 添加总流量信息
+		"Traffic":      totalTraffic, // 总流量信息
+		"UsedTraffic":  usedTraffic,  // 已使用流量信息
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})
