@@ -243,7 +243,7 @@ func (h *ProxyHandler) CreateProxy(c *gin.Context) {
 		RemotePort:        strconv.Itoa(req.RemotePort),
 		HeaderXFromWhere:  req.HeaderXFromWhere,
 		Node:              req.NodeID,
-		Status:            "inactive", // 默认为未激活状态
+		Status:            "offline", // 默认为未激活状态
 	}
 
 	// 创建隧道

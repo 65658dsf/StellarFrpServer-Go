@@ -421,7 +421,7 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
 	if err == nil && proxy != nil {
 		// 更新隧道状态为活跃
-		proxy.Status = "active"
+		proxy.Status = "online"
 		proxy.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
 		if runID, ok := userInfo["run_id"].(string); ok {
 			proxy.RunID = runID
@@ -473,7 +473,7 @@ func (h *ProxyAuthHandler) handleCloseProxyAuth(c *gin.Context, req FrpPluginReq
 	// 更新隧道状态为非活跃
 	proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
 	if err == nil && proxy != nil {
-		proxy.Status = "inactive"
+		proxy.Status = "offline"
 		proxy.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
 		proxy.RunID = ""
 

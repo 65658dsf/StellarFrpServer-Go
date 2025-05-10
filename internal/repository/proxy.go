@@ -60,7 +60,7 @@ func (r *proxyRepository) Create(ctx context.Context, proxy *Proxy) (int64, erro
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	proxy.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
-	proxy.Status = "inactive" // 默认为未激活状态
+	proxy.Status = "offline" // 默认为未激活状态
 
 	res, err := r.db.ExecContext(ctx, query,
 		proxy.Username, proxy.ProxyName, proxy.ProxyType, proxy.LocalIP, proxy.LocalPort,

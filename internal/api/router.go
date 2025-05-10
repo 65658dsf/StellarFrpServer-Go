@@ -44,6 +44,9 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeTrafficRepo := repository.NewNodeTrafficRepository(db)
 	userCheckinRepo := repository.NewUserCheckinRepository(db)
 	userTrafficLogRepo := repository.NewUserTrafficLogRepository(db)
+	adRepo := repository.NewAdRepository(db)
+	announcementRepo := repository.NewAnnouncementRepository(db)
+	systemRepo := repository.NewSystemRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -62,6 +65,9 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
 	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, logger)
 	userTrafficLogService := service.NewUserTrafficLogService(nodeRepo, userTrafficLogRepo, logger)
+	adService := service.NewAdService(adRepo, redisClient, logger)
+	announcementService := service.NewAnnouncementService(announcementRepo, redisClient, logger)
+	systemService := service.NewSystemService(systemRepo, redisClient, logger)
 
 	// 初始化节点调度器
 	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
@@ -76,7 +82,10 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	userCheckinHandler := handler.NewUserCheckinHandler(userService, userCheckinService, logger)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
-	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, logger) // 初始化隧道鉴权处理器
+	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, logger)
+	adHandler := handler.NewAdHandler(adService, logger)
+	announcementHandler := handler.NewAnnouncementHandler(announcementService, logger)
+	systemHandler := handler.NewSystemHandler(systemService, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -87,7 +96,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	v1 := router.Group("/api/v1")
 
 	// 注册所有API路由
-	apis.RegisterRoutes(v1, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)
+	apis.RegisterRoutes(v1, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, adHandler, announcementHandler, systemHandler)
 
 	return router
 }
