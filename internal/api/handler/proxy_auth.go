@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"stellarfrp/internal/repository"
 	"stellarfrp/internal/service"
 	"stellarfrp/pkg/logger"
 
@@ -213,7 +215,58 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	proxyName := parts[1]
 	proxyType, _ := content["proxy_type"].(string)
 
-	// 4. 根据隧道类型校验配置
+	// 获取隧道信息
+	proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
+	if err != nil {
+		h.logger.Error("查询隧道信息失败", "error", err)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "服务器内部错误",
+		})
+		return
+	}
+
+	// 如果隧道不存在，拒绝请求
+	if proxy == nil {
+		h.logger.Warn("隧道不存在", "username", username, "proxy_name", proxyName)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "隧道不存在",
+		})
+		return
+	}
+
+	// 检查隧道类型是否匹配
+	if proxy.ProxyType != proxyType {
+		h.logger.Warn("隧道类型不匹配", "expected", proxy.ProxyType, "actual", proxyType)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "隧道类型不匹配",
+		})
+		return
+	}
+
+	// 检查用户是否有权限使用该节点
+	hasAccess, err := h.proxyService.CheckUserNodeAccess(context.Background(), username, proxy.Node)
+	if err != nil {
+		h.logger.Error("检查节点权限失败", "error", err)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "服务器内部错误",
+		})
+		return
+	}
+
+	if !hasAccess {
+		h.logger.Warn("用户无权使用此节点", "username", username, "node_id", proxy.Node)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "您无权使用此节点",
+		})
+		return
+	}
+
+	// 4. 根据隧道类型验证特定配置
 	if proxyType == "tcp" || proxyType == "udp" {
 		// 对于TCP/UDP类型，检查remote_port
 		remotePort, ok := content["remote_port"].(float64)
@@ -221,37 +274,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 			c.JSON(http.StatusOK, FrpPluginResponse{
 				Reject:       true,
 				RejectReason: "远程端口配置错误",
-			})
-			return
-		}
-
-		// 查询隧道信息，确认是否存在该隧道
-		proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
-		if err != nil {
-			h.logger.Error("查询隧道信息失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		// 如果隧道不存在，拒绝请求
-		if proxy == nil {
-			h.logger.Warn("隧道不存在", "username", username, "proxy_name", proxyName)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道不存在",
-			})
-			return
-		}
-
-		// 检查隧道类型是否匹配
-		if proxy.ProxyType != proxyType {
-			h.logger.Warn("隧道类型不匹配", "expected", proxy.ProxyType, "actual", proxyType)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道类型不匹配",
 			})
 			return
 		}
@@ -266,27 +288,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 			})
 			return
 		}
-
-		// 检查用户是否有权限使用该节点
-		hasAccess, err := h.proxyService.CheckUserNodeAccess(context.Background(), username, proxy.Node)
-		if err != nil {
-			h.logger.Error("检查节点权限失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		if !hasAccess {
-			h.logger.Warn("用户无权使用此节点", "username", username, "node_id", proxy.Node)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "您无权使用此节点",
-			})
-			return
-		}
-
 	} else if proxyType == "http" || proxyType == "https" {
 		// 对于HTTP/HTTPS类型，检查custom_domains
 		customDomains, ok := content["custom_domains"].([]interface{})
@@ -294,37 +295,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 			c.JSON(http.StatusOK, FrpPluginResponse{
 				Reject:       true,
 				RejectReason: "域名配置错误",
-			})
-			return
-		}
-
-		// 查询隧道信息
-		proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
-		if err != nil {
-			h.logger.Error("查询隧道信息失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		// 如果隧道不存在，拒绝请求
-		if proxy == nil {
-			h.logger.Warn("隧道不存在", "username", username, "proxy_name", proxyName)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道不存在",
-			})
-			return
-		}
-
-		// 检查隧道类型是否匹配
-		if proxy.ProxyType != proxyType {
-			h.logger.Warn("隧道类型不匹配", "expected", proxy.ProxyType, "actual", proxyType)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道类型不匹配",
 			})
 			return
 		}
@@ -346,91 +316,23 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 			})
 			return
 		}
+	}
 
-		// 检查用户是否有权限使用该节点
-		hasAccess, err := h.proxyService.CheckUserNodeAccess(context.Background(), username, proxy.Node)
-		if err != nil {
-			h.logger.Error("检查节点权限失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		if !hasAccess {
-			h.logger.Warn("用户无权使用此节点", "username", username, "node_id", proxy.Node)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "您无权使用此节点",
-			})
-			return
-		}
-	} else {
-		// 其他类型的隧道，如stcp/tcpmux等
-		proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
-		if err != nil {
-			h.logger.Error("查询隧道信息失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		if proxy == nil {
-			h.logger.Warn("隧道不存在", "username", username, "proxy_name", proxyName)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道不存在",
-			})
-			return
-		}
-
-		if proxy.ProxyType != proxyType {
-			h.logger.Warn("隧道类型不匹配", "expected", proxy.ProxyType, "actual", proxyType)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "隧道类型不匹配",
-			})
-			return
-		}
-
-		// 检查用户是否有权限使用该节点
-		hasAccess, err := h.proxyService.CheckUserNodeAccess(context.Background(), username, proxy.Node)
-		if err != nil {
-			h.logger.Error("检查节点权限失败", "error", err)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "服务器内部错误",
-			})
-			return
-		}
-
-		if !hasAccess {
-			h.logger.Warn("用户无权使用此节点", "username", username, "node_id", proxy.Node)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "您无权使用此节点",
-			})
-			return
-		}
+	// 5. 验证transport相关参数
+	if !h.verifyTransportParams(c, content, proxy, user) {
+		return
 	}
 
 	// 鉴权通过，更新隧道状态
-	proxy, err := h.proxyService.GetByUsernameAndName(context.Background(), username, proxyName)
-	if err == nil && proxy != nil {
-		// 更新隧道状态为活跃
-		proxy.Status = "online"
-		proxy.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
-		if runID, ok := userInfo["run_id"].(string); ok {
-			proxy.RunID = runID
-		}
+	proxy.Status = "online"
+	proxy.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
+	if runID, ok := userInfo["run_id"].(string); ok {
+		proxy.RunID = runID
+	}
 
-		err = h.proxyService.Update(context.Background(), proxy)
-		if err != nil {
-			h.logger.Error("更新隧道状态失败", "error", err)
-		}
+	err = h.proxyService.Update(context.Background(), proxy)
+	if err != nil {
+		h.logger.Error("更新隧道状态失败", "error", err)
 	}
 
 	// 鉴权通过
@@ -438,6 +340,72 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		Reject:   false,
 		Unchange: true,
 	})
+}
+
+// verifyTransportParams 验证隧道的传输参数
+func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[string]interface{}, proxy *repository.Proxy, user *repository.User) bool {
+	// 获取传输参数
+	useEncryption, hasEncryption := content["use_encryption"].(bool)
+	bandwidthLimit, hasBandwidth := content["bandwidth_limit"].(string)
+	bandwidthLimitMode, hasBandwidthMode := content["bandwidth_limit_mode"].(string)
+
+	// 检查传输配置
+	if hasEncryption && strconv.FormatBool(useEncryption) != proxy.UseEncryption {
+		h.logger.Warn("加密设置不匹配", "expected", proxy.UseEncryption, "actual", useEncryption)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "加密设置不匹配",
+		})
+		return false
+	}
+
+	// 获取用户带宽限制
+	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("获取用户组信息失败", "error", err)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "服务器内部错误",
+		})
+		return false
+	}
+
+	// 计算带宽限制
+	userBandwidth := 0
+	if user.Bandwidth != nil {
+		userBandwidth = *user.Bandwidth
+	}
+	totalBandwidth := userGroup.BandwidthLimit + userBandwidth
+	expectedBandwidth := fmt.Sprintf("%d", totalBandwidth) + "MB"
+
+	// 检查带宽限制 - 更灵活的比较方式
+	if hasBandwidth {
+		// 移除可能存在的引号
+		cleanBandwidth := strings.Trim(bandwidthLimit, "\"")
+		cleanExpected := expectedBandwidth
+
+		if cleanBandwidth != cleanExpected {
+			h.logger.Warn("带宽限制不匹配", "expected", expectedBandwidth, "actual", bandwidthLimit,
+				"cleanExpected", cleanExpected, "cleanBandwidth", cleanBandwidth)
+			c.JSON(http.StatusOK, FrpPluginResponse{
+				Reject:       true,
+				RejectReason: "带宽限制设置不匹配",
+			})
+			return false
+		}
+	}
+
+	// 检查带宽限制模式
+	if hasBandwidthMode && bandwidthLimitMode != "server" {
+		h.logger.Warn("带宽限制模式不匹配", "expected", "server", "actual", bandwidthLimitMode)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "带宽限制模式必须为server",
+		})
+		return false
+	}
+
+	return true
 }
 
 // handleCloseProxyAuth 处理关闭隧道鉴权

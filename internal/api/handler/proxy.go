@@ -557,12 +557,28 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 	}
 
 	var req GetProxyRequest
-	// 尝试解析JSON请求体，如果为空或格式错误，则默认返回所有隧道
 	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
 		// 只有在不是EOF错误时才返回错误信息
 		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
+
+	// 获取用户带宽限制（用户本身 + 用户所在权限组）
+	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("Failed to get user group", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取用户组失败"})
+		return
+	}
+
+	// 计算总带宽限制
+	userBandwidth := 0
+	if user.Bandwidth != nil {
+		userBandwidth = *user.Bandwidth
+	}
+
+	totalBandwidth := userGroup.BandwidthLimit + userBandwidth
+	bandwidthStr := "\"" + fmt.Sprintf("%d", totalBandwidth) + "MB\""
 
 	// 如果提供了ID，则获取单个隧道
 	if req.ID > 0 {
@@ -611,7 +627,7 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		baseConfig := "serverAddr = \"" + node.IP + "\"\n" +
 			"serverPort = " + strconv.Itoa(node.FrpsPort) + "\n" +
 			"user = \"" + proxy.Username + "\"\n" +
-			"metadatas.token = \"" + user.Token + "\"\n"
+			"metadatas.token = \"" + user.Token + "\"\n\n"
 
 		switch proxy.ProxyType {
 		case "http":
@@ -627,6 +643,11 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 			if proxy.Domain != "" {
 				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
 			}
+			data += "[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
 
 		case "https":
 			// HTTPS类型隧道配置
@@ -658,6 +679,12 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 				data += "requestHeaders.set.x-from-where = \"" + proxy.HeaderXFromWhere + "\"\n"
 			}
 
+			data += "[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
+
 		default: // tcp, udp 和其他类型
 			// 标准配置
 			data = baseConfig +
@@ -666,12 +693,18 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 				"type = \"" + proxy.ProxyType + "\"\n" +
 				"localIP = \"" + proxy.LocalIP + "\"\n" +
 				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n" +
-				"remotePort = " + proxy.RemotePort + "\n"
+				"remotePort = " + proxy.RemotePort + "\n" +
+				"[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
 		}
 
 		// 构建返回数据
 		tunnelData := gin.H{
 			"Id":         proxy.ID,
+			"NodeId":     proxy.Node,
 			"ProxyName":  proxy.ProxyName,
 			"ProxyType":  proxy.ProxyType,
 			"LocalIp":    proxy.LocalIP,
@@ -701,6 +734,22 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道列表失败: " + err.Error()})
 		return
 	}
+
+	// 带宽配置可以被所有隧道使用
+	userGroup, err = h.userService.GetUserGroup(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("Failed to get user group for bandwidth", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取用户组带宽失败"})
+		return
+	}
+
+	userBandwidth = 0
+	if user.Bandwidth != nil {
+		userBandwidth = *user.Bandwidth
+	}
+
+	totalBandwidth = userGroup.BandwidthLimit + userBandwidth
+	bandwidthStr = "\"" + fmt.Sprintf("%d", totalBandwidth) + "MB\""
 
 	// 构建返回数据
 	tunnels := make(gin.H)
@@ -732,7 +781,7 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		baseConfig := "serverAddr = \"" + node.IP + "\"\n" +
 			"serverPort = " + strconv.Itoa(node.FrpsPort) + "\n" +
 			"user = \"" + proxy.Username + "\"\n" +
-			"metadatas.token = \"" + user.Token + "\"\n"
+			"metadatas.token = \"" + user.Token + "\"\n\n"
 
 		switch proxy.ProxyType {
 		case "http":
@@ -748,6 +797,11 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 			if proxy.Domain != "" {
 				data += "customDomains = [\"" + proxy.Domain + "\"]\n"
 			}
+			data += "[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
 
 		case "https":
 			// HTTPS类型隧道配置
@@ -779,6 +833,12 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 				data += "requestHeaders.set.x-from-where = \"" + proxy.HeaderXFromWhere + "\"\n"
 			}
 
+			data += "[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
+
 		default: // tcp, udp 和其他类型
 			// 标准配置
 			data = baseConfig +
@@ -787,12 +847,18 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 				"type = \"" + proxy.ProxyType + "\"\n" +
 				"localIP = \"" + proxy.LocalIP + "\"\n" +
 				"localPort = " + strconv.Itoa(proxy.LocalPort) + "\n" +
-				"remotePort = " + proxy.RemotePort + "\n"
+				"remotePort = " + proxy.RemotePort + "\n" +
+				"[proxies.transport]\n" +
+				"useEncryption = " + proxy.UseEncryption + "\n" +
+				"useCompression = " + proxy.UseCompression + "\n" +
+				"bandwidthLimit = " + bandwidthStr + "\n" +
+				"bandwidthLimitMode = \"server\"\n"
 		}
 
 		// 添加隧道信息
 		tunnels[strconv.FormatInt(proxy.ID, 10)] = gin.H{
 			"Id":         proxy.ID,
+			"NodeId":     proxy.Node,
 			"ProxyName":  proxy.ProxyName,
 			"ProxyType":  proxy.ProxyType,
 			"LocalIp":    proxy.LocalIP,
