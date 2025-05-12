@@ -716,10 +716,14 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		// 构建Link
 		remotePort, _ := strconv.Atoi(proxy.RemotePort)
 		link := ""
-		if node.Host.Valid && node.Host.String != "" {
-			link = node.Host.String + ":" + proxy.RemotePort
+		if proxy.ProxyType != "http" && proxy.ProxyType != "https" {
+			if node.Host.Valid && node.Host.String != "" {
+				link = node.Host.String + ":" + proxy.RemotePort
+			} else {
+				link = node.IP + ":" + proxy.RemotePort
+			}
 		} else {
-			link = node.IP + ":" + proxy.RemotePort
+			link = proxy.Domain
 		}
 
 		// 根据隧道类型生成不同的data内容
