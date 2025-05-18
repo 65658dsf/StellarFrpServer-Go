@@ -61,9 +61,9 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// 初始化服务
 	userService := service.NewUserService(userRepo, groupRepo, userTrafficLogRepo, redisClient, worker, emailService, logger)
 	nodeService := service.NewNodeService(nodeRepo)
-	proxyService := service.NewProxyService(proxyRepo, nodeService, userService)
+	proxyService := service.NewProxyService(proxyRepo, nodeService, userService, redisClient, logger)
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
-	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, logger)
+	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, redisClient, logger)
 	userTrafficLogService := service.NewUserTrafficLogService(nodeRepo, userTrafficLogRepo, logger)
 	adService := service.NewAdService(adRepo, redisClient, logger)
 	announcementService := service.NewAnnouncementService(announcementRepo, redisClient, logger)

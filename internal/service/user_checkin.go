@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"stellarfrp/internal/repository"
 	"stellarfrp/pkg/logger"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // UserCheckinService 用户签到服务接口
@@ -29,6 +33,7 @@ type userCheckinService struct {
 	userRepo        repository.UserRepository
 	groupRepo       repository.GroupRepository
 	userCheckinRepo repository.UserCheckinRepository
+	redisCli        *redis.Client
 	logger          *logger.Logger
 }
 
@@ -37,6 +42,7 @@ func NewUserCheckinService(
 	userRepo repository.UserRepository,
 	groupRepo repository.GroupRepository,
 	userCheckinRepo repository.UserCheckinRepository,
+	redisCli *redis.Client,
 	logger *logger.Logger,
 ) UserCheckinService {
 	// 初始化随机数生成器
@@ -46,6 +52,7 @@ func NewUserCheckinService(
 		userRepo:        userRepo,
 		groupRepo:       groupRepo,
 		userCheckinRepo: userCheckinRepo,
+		redisCli:        redisCli,
 		logger:          logger,
 	}
 }
@@ -162,12 +169,56 @@ func (s *userCheckinService) Checkin(ctx context.Context, userID int64) (*reposi
 		return nil, errors.New("更新用户信息失败")
 	}
 
+	// 签到成功后清除该用户的签到历史缓存
+	s.clearUserCheckinCache(ctx, userID)
+
 	return checkinLog, nil
 }
 
-// GetTodayStats 获取今日签到统计
+// 生成用户签到历史缓存键
+func (s *userCheckinService) getUserCheckinCacheKey(userID int64, page, pageSize int) string {
+	return fmt.Sprintf("user:checkin:%d:page:%d:size:%d", userID, page, pageSize)
+}
+
+// 清除用户签到历史缓存
+func (s *userCheckinService) clearUserCheckinCache(ctx context.Context, userID int64) {
+	pattern := fmt.Sprintf("user:checkin:%d:page:*", userID)
+	keys, err := s.redisCli.Keys(ctx, pattern).Result()
+	if err != nil {
+		s.logger.Error("清除签到缓存失败", "error", err, "userID", userID)
+		return
+	}
+
+	if len(keys) > 0 {
+		err = s.redisCli.Del(ctx, keys...).Err()
+		if err != nil {
+			s.logger.Error("删除签到缓存键失败", "error", err, "userID", userID)
+		}
+	}
+}
+
+// 检查用户今日是否已签到
+func (s *userCheckinService) HasCheckedToday(ctx context.Context, userID int64) (bool, error) {
+	today := time.Now()
+	todayZero := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+
+	checkinLog, err := s.userCheckinRepo.GetByUserAndDate(ctx, userID, todayZero)
+	if err != nil {
+		return false, err
+	}
+
+	return checkinLog != nil, nil
+}
+
+// 获取今日签到统计
 func (s *userCheckinService) GetTodayStats(ctx context.Context) (int, error) {
 	return s.userCheckinRepo.GetTodayCheckinCount(ctx)
+}
+
+// 用于缓存的签到记录结构
+type checkinLogCache struct {
+	Logs  []*repository.UserCheckinLog `json:"logs"`
+	Total int                          `json:"total"`
 }
 
 // GetCheckinLogsWithTotal 获取用户签到记录及总数
@@ -179,19 +230,42 @@ func (s *userCheckinService) GetCheckinLogsWithTotal(ctx context.Context, userID
 		pageSize = 10
 	}
 
-	offset := (page - 1) * pageSize
-	return s.userCheckinRepo.GetByUserIDWithTotal(ctx, userID, pageSize, offset)
-}
-
-// HasCheckedToday 检查用户今日是否已签到
-func (s *userCheckinService) HasCheckedToday(ctx context.Context, userID int64) (bool, error) {
-	today := time.Now()
-	todayZero := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
-
-	checkinLog, err := s.userCheckinRepo.GetByUserAndDate(ctx, userID, todayZero)
-	if err != nil {
-		return false, err
+	// 尝试从缓存中获取
+	cacheKey := s.getUserCheckinCacheKey(userID, page, pageSize)
+	cachedData, err := s.redisCli.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// 缓存命中，解析数据
+		var cacheResult checkinLogCache
+		if err := json.Unmarshal([]byte(cachedData), &cacheResult); err == nil {
+			return cacheResult.Logs, cacheResult.Total, nil
+		}
+		// 解析失败，记录日志
+		s.logger.Error("解析签到缓存数据失败", "error", err, "userID", userID)
+	} else if err.Error() != "redis: nil" {
+		// 发生了除缓存不存在之外的错误
+		s.logger.Error("获取签到缓存失败", "error", err, "userID", userID)
 	}
 
-	return checkinLog != nil, nil
+	// 缓存未命中或出错，从数据库获取
+	offset := (page - 1) * pageSize
+	logs, total, err := s.userCheckinRepo.GetByUserIDWithTotal(ctx, userID, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 将结果存入缓存
+	cacheData := checkinLogCache{
+		Logs:  logs,
+		Total: total,
+	}
+	cacheBytes, err := json.Marshal(cacheData)
+	if err == nil {
+		// 设置缓存，过期时间30分钟
+		err = s.redisCli.Set(ctx, cacheKey, cacheBytes, 30*time.Minute).Err()
+		if err != nil {
+			s.logger.Error("设置签到缓存失败", "error", err, "userID", userID)
+		}
+	}
+
+	return logs, total, nil
 }
