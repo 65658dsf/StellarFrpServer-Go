@@ -24,8 +24,8 @@ type UserCheckinRepository interface {
 	// 创建签到记录
 	Create(ctx context.Context, checkin *UserCheckinLog) error
 
-	// 获取用户的签到记录
-	GetByUserID(ctx context.Context, userID int64, limit, offset int) ([]*UserCheckinLog, error)
+	// 获取用户的签到记录及总数
+	GetByUserIDWithTotal(ctx context.Context, userID int64, limit, offset int) ([]*UserCheckinLog, int, error)
 
 	// 获取用户最近的签到记录
 	GetLatestByUserID(ctx context.Context, userID int64) (*UserCheckinLog, error)
@@ -62,17 +62,6 @@ func (r *userCheckinRepository) Create(ctx context.Context, checkin *UserCheckin
 	}
 	checkin.ID = id
 	return nil
-}
-
-// GetByUserID 获取用户的签到记录
-func (r *userCheckinRepository) GetByUserID(ctx context.Context, userID int64, limit, offset int) ([]*UserCheckinLog, error) {
-	query := `SELECT * FROM user_checkin_logs WHERE user_id = ? ORDER BY checkin_date DESC LIMIT ? OFFSET ?`
-	var logs []*UserCheckinLog
-	err := r.db.SelectContext(ctx, &logs, query, userID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	return logs, nil
 }
 
 // GetLatestByUserID 获取用户最近的签到记录
@@ -116,4 +105,30 @@ func (r *userCheckinRepository) GetTodayCheckinCount(ctx context.Context) (int, 
 		return 0, err
 	}
 	return count, nil
+}
+
+// GetByUserIDWithTotal 获取用户的签到记录及总数
+func (r *userCheckinRepository) GetByUserIDWithTotal(ctx context.Context, userID int64, limit, offset int) ([]*UserCheckinLog, int, error) {
+	// 先获取总记录数
+	countQuery := `SELECT COUNT(*) FROM user_checkin_logs WHERE user_id = ?`
+	var total int
+	err := r.db.GetContext(ctx, &total, countQuery, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 如果没有记录，直接返回空数组和0
+	if total == 0 {
+		return []*UserCheckinLog{}, 0, nil
+	}
+
+	// 获取分页数据
+	dataQuery := `SELECT * FROM user_checkin_logs WHERE user_id = ? ORDER BY checkin_date DESC LIMIT ? OFFSET ?`
+	var logs []*UserCheckinLog
+	err = r.db.SelectContext(ctx, &logs, dataQuery, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
 }

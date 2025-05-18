@@ -14,8 +14,8 @@ type UserCheckinService interface {
 	// 用户签到
 	Checkin(ctx context.Context, userID int64) (*repository.UserCheckinLog, error)
 
-	// 获取用户签到记录
-	GetCheckinLogs(ctx context.Context, userID int64, page, pageSize int) ([]*repository.UserCheckinLog, error)
+	// 获取用户签到记录及总数
+	GetCheckinLogsWithTotal(ctx context.Context, userID int64, page, pageSize int) ([]*repository.UserCheckinLog, int, error)
 
 	// 检查用户今日是否已签到
 	HasCheckedToday(ctx context.Context, userID int64) (bool, error)
@@ -165,8 +165,13 @@ func (s *userCheckinService) Checkin(ctx context.Context, userID int64) (*reposi
 	return checkinLog, nil
 }
 
-// GetCheckinLogs 获取用户签到记录
-func (s *userCheckinService) GetCheckinLogs(ctx context.Context, userID int64, page, pageSize int) ([]*repository.UserCheckinLog, error) {
+// GetTodayStats 获取今日签到统计
+func (s *userCheckinService) GetTodayStats(ctx context.Context) (int, error) {
+	return s.userCheckinRepo.GetTodayCheckinCount(ctx)
+}
+
+// GetCheckinLogsWithTotal 获取用户签到记录及总数
+func (s *userCheckinService) GetCheckinLogsWithTotal(ctx context.Context, userID int64, page, pageSize int) ([]*repository.UserCheckinLog, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -175,7 +180,7 @@ func (s *userCheckinService) GetCheckinLogs(ctx context.Context, userID int64, p
 	}
 
 	offset := (page - 1) * pageSize
-	return s.userCheckinRepo.GetByUserID(ctx, userID, pageSize, offset)
+	return s.userCheckinRepo.GetByUserIDWithTotal(ctx, userID, pageSize, offset)
 }
 
 // HasCheckedToday 检查用户今日是否已签到
@@ -189,9 +194,4 @@ func (s *userCheckinService) HasCheckedToday(ctx context.Context, userID int64) 
 	}
 
 	return checkinLog != nil, nil
-}
-
-// GetTodayStats 获取今日签到统计
-func (s *userCheckinService) GetTodayStats(ctx context.Context) (int, error) {
-	return s.userCheckinRepo.GetTodayCheckinCount(ctx)
 }

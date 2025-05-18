@@ -192,12 +192,18 @@ func (h *UserCheckinHandler) GetCheckinLogs(c *gin.Context) {
 		}
 	}
 
-	// 获取签到记录
-	logs, err := h.userCheckinService.GetCheckinLogs(context.Background(), user.ID, page, pageSize)
+	// 获取签到记录和总记录数
+	logs, total, err := h.userCheckinService.GetCheckinLogsWithTotal(context.Background(), user.ID, page, pageSize)
 	if err != nil {
 		h.logger.Error("获取签到记录失败", "error", err)
 		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取签到记录失败"})
 		return
+	}
+
+	// 计算总页数
+	pages := (total + pageSize - 1) / pageSize
+	if pages == 0 {
+		pages = 1
 	}
 
 	// 格式化签到记录
@@ -218,8 +224,10 @@ func (h *UserCheckinHandler) GetCheckinLogs(c *gin.Context) {
 		"msg":  "获取成功",
 		"logs": formattedLogs,
 		"pagination": gin.H{
-			"current_page": page,
-			"page_size":    pageSize,
+			"page":      page,
+			"page_size": pageSize,
+			"pages":     pages,
+			"total":     total,
 		},
 	})
 }
