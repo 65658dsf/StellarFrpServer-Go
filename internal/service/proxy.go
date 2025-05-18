@@ -12,6 +12,7 @@ type ProxyService interface {
 	Create(ctx context.Context, proxy *repository.Proxy) (int64, error)
 	GetByID(ctx context.Context, id int64) (*repository.Proxy, error)
 	GetByUsername(ctx context.Context, username string) ([]*repository.Proxy, error)
+	GetByUsernameWithPagination(ctx context.Context, username string, offset, limit int) ([]*repository.Proxy, error)
 	GetByUsernameAndName(ctx context.Context, username, proxyName string) (*repository.Proxy, error)
 	Update(ctx context.Context, proxy *repository.Proxy) error
 	Delete(ctx context.Context, id int64) error
@@ -51,6 +52,11 @@ func (s *proxyService) GetByID(ctx context.Context, id int64) (*repository.Proxy
 // GetByUsername 根据用户名获取隧道列表
 func (s *proxyService) GetByUsername(ctx context.Context, username string) ([]*repository.Proxy, error) {
 	return s.proxyRepo.GetByUsername(ctx, username)
+}
+
+// GetByUsernameWithPagination 根据用户名获取隧道列表（带分页）
+func (s *proxyService) GetByUsernameWithPagination(ctx context.Context, username string, offset, limit int) ([]*repository.Proxy, error) {
+	return s.proxyRepo.GetByUsernameWithPagination(ctx, username, offset, limit)
 }
 
 // GetByUsernameAndName 根据用户名和隧道名称获取隧道

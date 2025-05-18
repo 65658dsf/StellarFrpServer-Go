@@ -553,14 +553,37 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 
 	// 解析请求参数
 	type GetProxyRequest struct {
-		ID int64 `json:"id"`
+		ID       int64 `json:"id"`
+		Page     int   `json:"page"`      // 页码，从1开始
+		PageSize int   `json:"page_size"` // 每页条数
 	}
 
 	var req GetProxyRequest
-	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
-		// 只有在不是EOF错误时才返回错误信息
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+	// 尝试绑定JSON请求体。如果错误不是EOF（表示没有JSON体，这是可接受的），则认为是参数错误。
+	jsonBindErr := c.ShouldBindJSON(&req)
+	if jsonBindErr != nil && jsonBindErr.Error() != "EOF" {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + jsonBindErr.Error()})
 		return
+	}
+
+	// 从URL查询参数或JSON请求体中确定用户请求的页码和每页条数
+	userRequestedPage := 0
+	userRequestedPageSize := 0
+
+	pageQueryStr := c.Query("page")
+	pageSizeQueryStr := c.Query("page_size")
+
+	// 优先使用URL查询参数
+	if pVal, err := strconv.Atoi(pageQueryStr); err == nil && pVal > 0 {
+		userRequestedPage = pVal
+	} else if req.Page > 0 { // 如果URL参数无效或未提供，则使用JSON中的值 (req.Page 由 ShouldBindJSON 填充)
+		userRequestedPage = req.Page
+	}
+
+	if psVal, err := strconv.Atoi(pageSizeQueryStr); err == nil && psVal > 0 {
+		userRequestedPageSize = psVal
+	} else if req.PageSize > 0 { // 使用JSON中的值
+		userRequestedPageSize = req.PageSize
 	}
 
 	// 获取用户带宽限制（用户本身 + 用户所在权限组）
@@ -727,8 +750,48 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		return
 	}
 
-	// 如果没有提供ID，则获取用户的所有隧道
-	proxies, err := h.proxyService.GetByUsername(context.Background(), user.Username)
+	// 如果没有提供ID，则获取用户的隧道列表（可能分页）
+	var proxies []*repository.Proxy
+	var totalCount int
+
+	// 用于API响应的页码和每页条数
+	responsePage := 1
+	responsePageSize := 10 // 默认值
+
+	// 判断是否需要分页：当用户明确提供了有效的页码和每页条数时
+	shouldPaginate := userRequestedPage > 0 && userRequestedPageSize > 0
+
+	if shouldPaginate {
+		responsePage = userRequestedPage
+		responsePageSize = userRequestedPageSize
+
+		h.logger.Info("获取用户隧道分页列表", "username", user.Username, "page", responsePage, "pageSize", responsePageSize)
+
+		var countErr error
+		totalCount, countErr = h.proxyService.GetUserProxyCount(context.Background(), user.Username)
+		if countErr != nil {
+			h.logger.Error("Failed to get total count of proxies", "error", countErr)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道总数失败: " + countErr.Error()})
+			return
+		}
+
+		offset := (responsePage - 1) * responsePageSize
+		proxies, err = h.proxyService.GetByUsernameWithPagination(context.Background(), user.Username, offset, responsePageSize)
+	} else {
+		h.logger.Info("获取用户所有隧道列表", "username", user.Username)
+		proxies, err = h.proxyService.GetByUsername(context.Background(), user.Username)
+		if err == nil {
+			totalCount = len(proxies)
+		}
+		// 当获取所有隧道时，设置响应中的分页信息
+		responsePage = 1
+		if totalCount > 0 {
+			responsePageSize = totalCount
+		} else {
+			responsePageSize = 10 // 如果列表为空，使用默认的page_size
+		}
+	}
+
 	if err != nil {
 		h.logger.Error("Failed to get proxies", "error", err)
 		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道列表失败: " + err.Error()})
@@ -874,10 +937,26 @@ func (h *ProxyHandler) GetProxyByID(c *gin.Context) {
 		}
 	}
 
+	// 计算总页数
+	pages := 0
+	if responsePageSize > 0 && totalCount > 0 {
+		pages = (totalCount + responsePageSize - 1) / responsePageSize
+	} else if totalCount == 0 {
+		pages = 0
+	} else {
+		pages = 1
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":   200,
 		"msg":    "获取成功",
 		"tunnel": tunnels,
+		"pagination": gin.H{
+			"total":     totalCount,
+			"page":      responsePage,
+			"page_size": responsePageSize,
+			"pages":     pages,
+		},
 	})
 }
 

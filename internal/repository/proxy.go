@@ -34,6 +34,7 @@ type ProxyRepository interface {
 	Create(ctx context.Context, proxy *Proxy) (int64, error)
 	GetByID(ctx context.Context, id int64) (*Proxy, error)
 	GetByUsername(ctx context.Context, username string) ([]*Proxy, error)
+	GetByUsernameWithPagination(ctx context.Context, username string, offset, limit int) ([]*Proxy, error)
 	GetByUsernameAndName(ctx context.Context, username, proxyName string) (*Proxy, error)
 	Update(ctx context.Context, proxy *Proxy) error
 	Delete(ctx context.Context, id int64) error
@@ -94,6 +95,17 @@ func (r *proxyRepository) GetByUsername(ctx context.Context, username string) ([
 	query := `SELECT * FROM proxy WHERE username = ?`
 	var proxies []*Proxy
 	err := r.db.SelectContext(ctx, &proxies, query, username)
+	if err != nil {
+		return nil, err
+	}
+	return proxies, nil
+}
+
+// GetByUsernameWithPagination 根据用户名获取隧道列表（带分页）
+func (r *proxyRepository) GetByUsernameWithPagination(ctx context.Context, username string, offset, limit int) ([]*Proxy, error) {
+	query := `SELECT * FROM proxy WHERE username = ? ORDER BY id DESC LIMIT ? OFFSET ?`
+	var proxies []*Proxy
+	err := r.db.SelectContext(ctx, &proxies, query, username, limit, offset)
 	if err != nil {
 		return nil, err
 	}

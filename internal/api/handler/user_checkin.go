@@ -216,12 +216,10 @@ func (h *UserCheckinHandler) GetCheckinLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "获取成功",
-		"data": gin.H{
-			"logs": formattedLogs,
-			"pagination": gin.H{
-				"current_page": page,
-				"page_size":    pageSize,
-			},
+		"logs": formattedLogs,
+		"pagination": gin.H{
+			"current_page": page,
+			"page_size":    pageSize,
 		},
 	})
 }
