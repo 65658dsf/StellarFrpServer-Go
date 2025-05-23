@@ -2,5 +2,5 @@
 logs
 output/*
 output/StellarServer
-.env
-output/StellarServer
+output
+./output

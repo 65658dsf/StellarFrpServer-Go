@@ -126,7 +126,8 @@ func (h *ProxyHandler) CreateProxy(c *gin.Context) {
 	}
 
 	// 检查同一节点下相同协议类型的隧道是否已经使用了相同的远程端口
-	if req.RemotePort != 0 {
+	// 只对TCP和UDP类型的隧道进行端口占用检测，HTTP/HTTPS类型不检测端口占用
+	if req.ProxyType != "http" && req.ProxyType != "https" && req.RemotePort != 0 {
 		isUsed, err := h.proxyService.IsRemotePortUsed(context.Background(), req.NodeID, req.ProxyType, strconv.Itoa(req.RemotePort))
 		if err != nil {
 			h.logger.Error("Failed to check remote port usage", "error", err)
@@ -376,7 +377,8 @@ func (h *ProxyHandler) UpdateProxy(c *gin.Context) {
 	}
 
 	// 检查同一节点下相同协议类型的隧道是否已经使用了相同的远程端口（排除当前正在编辑的隧道）
-	if req.RemotePort != 0 {
+	// 只对TCP和UDP类型的隧道进行端口占用检测，HTTP/HTTPS类型不检测端口占用
+	if req.ProxyType != "http" && req.ProxyType != "https" && req.RemotePort != 0 {
 		isUsed, err := h.proxyService.IsRemotePortUsed(context.Background(), req.NodeID, req.ProxyType, strconv.Itoa(req.RemotePort))
 		if err != nil {
 			h.logger.Error("Failed to check remote port usage", "error", err)
