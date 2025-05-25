@@ -43,6 +43,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*User, error)
+	Count(ctx context.Context) (int64, error)
 }
 
 // userRepository 用户仓库实现
@@ -161,4 +162,15 @@ func (r *userRepository) GetByToken(ctx context.Context, token string) (*User, e
 		return nil, err
 	}
 	return user, nil
+}
+
+// Count 获取用户总数
+func (r *userRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	query := `SELECT COUNT(*) FROM users`
+	err := r.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

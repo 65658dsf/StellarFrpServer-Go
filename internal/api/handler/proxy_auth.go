@@ -123,6 +123,16 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 		return
 	}
 
+	// 检查用户是否在黑名单组（ID为6）
+	if user.GroupID == 6 {
+		h.logger.Warn("用户在黑名单中", "username", username)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "您的账号已被列入黑名单，禁止访问",
+		})
+		return
+	}
+
 	// 登录成功
 	h.logger.Info("用户登录成功", "username", username)
 	c.JSON(http.StatusOK, FrpPluginResponse{
@@ -187,6 +197,16 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: "用户账号已被禁用",
+		})
+		return
+	}
+
+	// 检查用户是否在黑名单组（ID为6）
+	if user.GroupID == 6 {
+		h.logger.Warn("用户在黑名单中", "username", username)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "您的账号已被列入黑名单，禁止访问",
 		})
 		return
 	}

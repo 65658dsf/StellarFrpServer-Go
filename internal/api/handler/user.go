@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"regexp"
 	"stellarfrp/internal/repository"
@@ -27,16 +28,18 @@ type UserHandler struct {
 	emailService  *email.Service
 	logger        *logger.Logger
 	geetestClient *geetest.GeetestClient
+	proxyService  service.ProxyService
 }
 
 // NewUserHandler 创建用户处理器实例
-func NewUserHandler(userService service.UserService, redisClient *redis.Client, emailService *email.Service, logger *logger.Logger, geetestClient *geetest.GeetestClient) *UserHandler {
+func NewUserHandler(userService service.UserService, redisClient *redis.Client, emailService *email.Service, logger *logger.Logger, geetestClient *geetest.GeetestClient, proxyService service.ProxyService) *UserHandler {
 	return &UserHandler{
 		userService:   userService,
 		redisClient:   redisClient,
 		emailService:  emailService,
 		logger:        logger,
 		geetestClient: geetestClient,
+		proxyService:  proxyService,
 	}
 }
 
@@ -329,6 +332,46 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		usedTraffic = 0
 	}
 
+	// 获取用户当前的隧道数量
+	proxyCount, err := h.proxyService.GetUserProxyCount(context.Background(), user.Username)
+	if err != nil {
+		h.logger.Error("Failed to get user proxy count", "error", err)
+		proxyCount = 0
+	}
+
+	// 获取用户组的隧道数量限制
+	tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), user.GroupID)
+	if err != nil {
+		h.logger.Error("Failed to get group tunnel limit", "error", err)
+		tunnelLimit = 0
+	}
+
+	// 获取用户的附加隧道数量
+	additionalTunnels := 0
+	if user.TunnelCount != nil {
+		additionalTunnels = *user.TunnelCount
+	}
+
+	// 计算总的隧道数量限制
+	totalTunnelLimit := tunnelLimit + additionalTunnels
+
+	// 获取用户组带宽限制
+	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("Failed to get user group for bandwidth", "error", err)
+	}
+
+	// 计算总带宽限制
+	userBandwidth := 0
+	if user.Bandwidth != nil {
+		userBandwidth = *user.Bandwidth
+	}
+
+	totalBandwidth := 0
+	if userGroup != nil {
+		totalBandwidth = userGroup.BandwidthLimit + userBandwidth
+	}
+
 	userInfo := gin.H{
 		"ID":           user.ID,
 		"Username":     user.Username,
@@ -339,8 +382,10 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"IsVerified":   user.IsVerified,
 		"Status":       user.Status,
 		"VerifyCount":  user.VerifyCount,
-		"Traffic":      totalTraffic, // 总流量信息
-		"UsedTraffic":  usedTraffic,  // 已使用流量信息
+		"Traffic":      totalTraffic,                                       // 总流量信息
+		"UsedTraffic":  usedTraffic,                                        // 已使用流量信息
+		"Tunnels":      fmt.Sprintf("%d/%d", proxyCount, totalTunnelLimit), // 隧道数量：已用/总数
+		"Bandwidth":    totalBandwidth,                                     // 带宽限制(Mbps)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})

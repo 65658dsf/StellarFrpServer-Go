@@ -15,5 +15,6 @@ INSERT INTO `groups` (`id`, `name`, `tunnel_limit`, `bandwidth_limit`, `traffic_
 (1, '未实名', 2, 1, 10),
 (2, '免费用户', 5, 2, 30),
 (3, '普通会员', 10, 4, 50),
-(4, '高级会员', 15, 6, 100)
+(4, '高级会员', 15, 6, 100),
+(6, '黑名单', 0, 0, 0)
 ON DUPLICATE KEY UPDATE `id`=`id`;

@@ -26,6 +26,7 @@ type UserService interface {
 	Update(ctx context.Context, user *repository.User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, page, pageSize int) ([]*repository.User, error)
+	Count(ctx context.Context) (int64, error)
 	GetTaskStatus(ctx context.Context, taskID string) (string, error)
 	SendEmail(ctx context.Context, email, msgType string) error
 	Login(ctx context.Context, identifier, password string) (*repository.User, error)
@@ -35,6 +36,7 @@ type UserService interface {
 	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
 	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
 	ResetToken(ctx context.Context, identifier, password string) (*repository.User, error)
+	AdminResetToken(ctx context.Context, user *repository.User) error
 	GetGroupTraffic(ctx context.Context, groupID int64) (int64, error)
 	GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error)
 }
@@ -330,6 +332,19 @@ func (s *userService) ResetToken(ctx context.Context, identifier, password strin
 	return user, nil
 }
 
+// AdminResetToken 管理员重置用户token（不需要密码验证）
+func (s *userService) AdminResetToken(ctx context.Context, user *repository.User) error {
+	// 生成新的32位随机token
+	user.Token = rand.String(32)
+
+	// 更新用户token
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetGroupTraffic 获取用户组的流量
 func (s *userService) GetGroupTraffic(ctx context.Context, groupID int64) (int64, error) {
 	group, err := s.groupRepo.GetByID(ctx, groupID)
@@ -359,4 +374,9 @@ func (s *userService) GetUserUsedTraffic(ctx context.Context, userID int64) (int
 	}
 
 	return trafficLog.TotalTraffic, nil
+}
+
+// Count 获取用户总数
+func (s *userService) Count(ctx context.Context) (int64, error) {
+	return s.userRepo.Count(ctx)
 }

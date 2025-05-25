@@ -2,6 +2,7 @@ package api
 
 import (
 	"stellarfrp/config"
+	"stellarfrp/internal/api/admin"
 	"stellarfrp/internal/api/apis"
 	"stellarfrp/internal/api/handler"
 	"stellarfrp/internal/middleware"
@@ -78,7 +79,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	trafficScheduler.Start() // 启动流量记录调度
 
 	// 初始化处理器
-	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient)
+	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient, proxyService)
 	userCheckinHandler := handler.NewUserCheckinHandler(userService, userCheckinService, logger)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
@@ -86,6 +87,9 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adHandler := handler.NewAdHandler(adService, logger)
 	announcementHandler := handler.NewAnnouncementHandler(announcementService, logger)
 	systemHandler := handler.NewSystemHandler(systemService, logger)
+
+	// 初始化管理员处理器
+	userAdminHandler := admin.NewUserAdminHandler(userService, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -95,8 +99,22 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// API版本v1
 	v1 := router.Group("/api/v1")
 
-	// 注册所有API路由
-	apis.RegisterRoutes(v1, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, adHandler, announcementHandler, systemHandler)
+	// 创建需要认证的API路由组
+	authRouter := v1.Group("")
+	// 为需要认证的API路由添加UserAuth中间件
+	authRouter.Use(middleware.UserAuth(userService))
+
+	// 注册不需要认证的路由（如登录、注册、发送验证码等）
+	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler)
+
+	// 注册需要认证的API路由
+	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)
+
+	// 注册管理员API路由
+	adminRouter := v1.Group("/admin")
+	// 添加管理员认证中间件
+	adminRouter.Use(middleware.AdminAuth(userService))
+	admin.RegisterAdminRoutes(adminRouter, userAdminHandler)
 
 	return router
 }
