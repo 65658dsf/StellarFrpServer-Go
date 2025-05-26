@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -44,6 +45,7 @@ type UserRepository interface {
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*User, error)
 	Count(ctx context.Context) (int64, error)
+	SearchUsers(ctx context.Context, keyword string) ([]*User, error)
 }
 
 // userRepository 用户仓库实现
@@ -173,4 +175,29 @@ func (r *userRepository) Count(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// SearchUsers 搜索用户
+func (r *userRepository) SearchUsers(ctx context.Context, keyword string) ([]*User, error) {
+	users := []*User{}
+	// 使用LIKE查询搜索用户名、邮箱或ID
+	query := `SELECT * FROM users WHERE username LIKE ? OR email LIKE ? OR id = ?`
+
+	// 尝试将关键字转换为ID
+	var id int64
+	_, err := fmt.Sscanf(keyword, "%d", &id)
+	if err != nil {
+		// 如果转换失败，使用0作为ID值（不会匹配任何记录）
+		id = 0
+	}
+
+	// 在关键字前后添加%用于模糊匹配
+	likeKeyword := "%" + keyword + "%"
+
+	err = r.db.SelectContext(ctx, &users, query, likeKeyword, likeKeyword, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

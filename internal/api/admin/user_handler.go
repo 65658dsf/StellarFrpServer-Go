@@ -381,11 +381,60 @@ func (h *UserAdminHandler) SearchUsers(c *gin.Context) {
 		return
 	}
 
-	// 这里需要在service层添加搜索方法，暂时返回空结果
+	// 使用service层的搜索方法
+	users, err := h.userService.SearchUsers(context.Background(), keyword)
+	if err != nil {
+		h.logger.Error("搜索用户失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "搜索用户失败"})
+		return
+	}
+
+	// 用户列表增强信息
+	type EnhancedUser struct {
+		*repository.User
+		GroupName        string `json:"GroupName"`
+		TotalTunnelLimit int    `json:"GroupTunnel"`
+		TotalBandwidth   int    `json:"GroupBandwidth"`
+	}
+
+	// 增强用户信息
+	enhancedUsers := make([]EnhancedUser, 0, len(users))
+	for _, user := range users {
+		// 移除敏感信息
+		user.Password = ""
+		user.Token = ""
+
+		// 获取用户组名称
+		groupName, err := h.userService.GetGroupName(context.Background(), user.GroupID)
+		if err != nil {
+			groupName = "未知用户组"
+		}
+
+		// 获取用户组的隧道数量限制
+		tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), user.GroupID)
+		if err != nil {
+			h.logger.Error("获取用户组隧道限制失败", "error", err, "user_id", user.ID)
+			tunnelLimit = 0
+		}
+
+		// 获取用户组带宽限制
+		userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
+		if err != nil {
+			h.logger.Error("获取用户组信息失败", "error", err, "user_id", user.ID)
+		}
+
+		enhancedUsers = append(enhancedUsers, EnhancedUser{
+			User:             user,
+			GroupName:        groupName,
+			TotalTunnelLimit: tunnelLimit,
+			TotalBandwidth:   userGroup.BandwidthLimit,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "搜索成功",
-		"data": []interface{}{},
+		"data": enhancedUsers,
 	})
 }
 

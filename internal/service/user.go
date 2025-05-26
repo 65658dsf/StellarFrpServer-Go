@@ -43,6 +43,7 @@ type UserService interface {
 	IsUserBlacklisted(ctx context.Context, userID int64) (bool, error)
 	IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error)
 	IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error)
+	SearchUsers(ctx context.Context, keyword string) ([]*repository.User, error)
 }
 
 // userService 用户服务实现
@@ -416,4 +417,9 @@ func (s *userService) IsUserBlacklistedByToken(ctx context.Context, token string
 
 	// 黑名单用户组ID为6
 	return user.GroupID == 6, nil
+}
+
+// SearchUsers 搜索用户
+func (s *userService) SearchUsers(ctx context.Context, keyword string) ([]*repository.User, error) {
+	return s.userRepo.SearchUsers(ctx, keyword)
 }
