@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"stellarfrp/internal/constants"
 	"stellarfrp/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -16,14 +17,14 @@ func AdminAuth(userService service.UserService) gin.HandlerFunc {
 		// 验证Token
 		user, err := userService.GetByToken(context.Background(), token)
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的Token"})
+			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": constants.ErrInvalidToken})
 			c.Abort()
 			return
 		}
 
 		// 检查用户是否为管理员（假设管理员的GroupID为4）
 		if user.GroupID != 4 {
-			c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "权限不足，需要管理员权限"})
+			c.JSON(http.StatusOK, gin.H{"code": 403, "msg": constants.ErrInsufficientPermission})
 			c.Abort()
 			return
 		}

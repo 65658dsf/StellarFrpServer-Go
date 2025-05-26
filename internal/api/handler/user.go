@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"stellarfrp/internal/constants"
 	"stellarfrp/internal/repository"
 	"stellarfrp/internal/service"
 	"stellarfrp/internal/types"
@@ -192,7 +193,7 @@ type LoginRequest struct {
 func (h *UserHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": constants.ErrInvalidParams})
 		return
 	}
 
@@ -206,7 +207,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// 只返回token
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
-		"msg":  "登录成功",
+		"msg":  constants.SuccessLogin,
 		"data": gin.H{
 			"token": user.Token,
 		},

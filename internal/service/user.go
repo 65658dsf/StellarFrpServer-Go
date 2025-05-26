@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"stellarfrp/internal/constants"
 	"stellarfrp/internal/repository"
 	"stellarfrp/pkg/async"
 	"stellarfrp/pkg/email"
@@ -39,6 +40,9 @@ type UserService interface {
 	AdminResetToken(ctx context.Context, user *repository.User) error
 	GetGroupTraffic(ctx context.Context, groupID int64) (int64, error)
 	GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error)
+	IsUserBlacklisted(ctx context.Context, userID int64) (bool, error)
+	IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error)
+	IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error)
 }
 
 // userService 用户服务实现
@@ -211,7 +215,7 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 		// 如果用户名不存在，尝试邮箱登录
 		user, err = s.userRepo.GetByEmail(ctx, identifier)
 		if err != nil {
-			return nil, errors.New("用户不存在")
+			return nil, errors.New(constants.ErrUserNotFound)
 		}
 	} else if err != nil {
 		return nil, err
@@ -219,7 +223,7 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 
 	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return nil, errors.New("密码错误")
+		return nil, errors.New(constants.ErrPasswordIncorrect)
 	}
 
 	// 只有在用户没有token或token为空时才生成新的token
@@ -379,4 +383,37 @@ func (s *userService) GetUserUsedTraffic(ctx context.Context, userID int64) (int
 // Count 获取用户总数
 func (s *userService) Count(ctx context.Context) (int64, error) {
 	return s.userRepo.Count(ctx)
+}
+
+// IsUserBlacklisted 检查用户是否在黑名单中（GroupID为6）
+func (s *userService) IsUserBlacklisted(ctx context.Context, userID int64) (bool, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	// 黑名单用户组ID为6
+	return user.GroupID == 6, nil
+}
+
+// IsUserBlacklistedByUsername 根据用户名检查用户是否在黑名单中
+func (s *userService) IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error) {
+	user, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return false, err
+	}
+
+	// 黑名单用户组ID为6
+	return user.GroupID == 6, nil
+}
+
+// IsUserBlacklistedByToken 根据Token检查用户是否在黑名单中
+func (s *userService) IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error) {
+	user, err := s.userRepo.GetByToken(ctx, token)
+	if err != nil {
+		return false, err
+	}
+
+	// 黑名单用户组ID为6
+	return user.GroupID == 6, nil
 }

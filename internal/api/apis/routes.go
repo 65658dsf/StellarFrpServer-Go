@@ -13,6 +13,7 @@ func RegisterPublicRoutes(
 	systemHandler *handler.SystemHandler,
 	announcementHandler *handler.AnnouncementHandler,
 	adHandler *handler.AdHandler,
+	proxyAuthHandler *handler.ProxyAuthHandler,
 ) {
 	// 用户登录注册相关路由
 	users := router.Group("/users")
@@ -31,6 +32,9 @@ func RegisterPublicRoutes(
 
 	// 广告相关路由
 	router.GET("/ads", adHandler.GetAds)
+
+	// 隧道鉴权路由（不需要认证）
+	router.POST("/proxy/auth", proxyAuthHandler.HandleProxyAuth)
 }
 
 // RegisterAuthRoutes 注册需要认证的API路由
@@ -81,7 +85,7 @@ func RegisterRoutes(
 	systemHandler *handler.SystemHandler,
 ) {
 	// 注册公共路由
-	RegisterPublicRoutes(router, userHandler, systemHandler, announcementHandler, adHandler)
+	RegisterPublicRoutes(router, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
 
 	// 注册需要认证的路由
 	RegisterAuthRoutes(router, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)

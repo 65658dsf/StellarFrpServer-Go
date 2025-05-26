@@ -105,7 +105,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	authRouter.Use(middleware.UserAuth(userService))
 
 	// 注册不需要认证的路由（如登录、注册、发送验证码等）
-	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler)
+	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
 
 	// 注册需要认证的API路由
 	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)

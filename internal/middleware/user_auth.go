@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"stellarfrp/internal/constants"
 	"stellarfrp/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,7 @@ func UserAuth(userService service.UserService) gin.HandlerFunc {
 		// 从请求头获取Token
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": constants.ErrUnauthorized})
 			c.Abort()
 			return
 		}
@@ -22,14 +23,21 @@ func UserAuth(userService service.UserService) gin.HandlerFunc {
 		// 验证Token
 		user, err := userService.GetByToken(context.Background(), token)
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的Token"})
+			c.JSON(http.StatusOK, gin.H{"code": 401, "msg": constants.ErrInvalidToken})
 			c.Abort()
 			return
 		}
 
-		// 检查用户是否在黑名单组（ID为6）
-		if user.GroupID == 6 {
-			c.JSON(http.StatusOK, gin.H{"code": 403, "msg": "您的账号已被列入黑名单，禁止访问API"})
+		// 检查用户是否在黑名单中
+		isBlacklisted, err := userService.IsUserBlacklistedByToken(context.Background(), token)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": constants.ErrInternalServer})
+			c.Abort()
+			return
+		}
+
+		if isBlacklisted {
+			c.JSON(http.StatusOK, gin.H{"code": 403, "msg": constants.ErrBlacklisted})
 			c.Abort()
 			return
 		}
