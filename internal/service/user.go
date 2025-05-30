@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"stellarfrp/internal/constants"
@@ -17,29 +16,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
-const (
-	userCacheDuration     = 10 * time.Minute
-	groupCacheDuration    = 1 * time.Hour
-	allUsersCacheDuration = 5 * time.Minute
-)
+// const (
+// 	allUsersCacheDuration = 5 * time.Minute // 不再使用
+// )
 
-func userCacheKey(id int64) string {
-	return fmt.Sprintf("user:%d", id)
-}
-
-func userByUsernameCacheKey(username string) string {
-	return fmt.Sprintf("user:username:%s", username)
-}
-
-func userByTokenCacheKey(token string) string {
-	return fmt.Sprintf("user:token:%s", token)
-}
-
-func groupCacheKey(id int64) string {
-	return fmt.Sprintf("group:%d", id)
-}
-
-const allUsersCacheKey = "users:all"
+// const allUsersCacheKey = "users:all" // 不再使用
 
 // UserService 用户服务接口
 type UserService interface {
@@ -124,8 +105,7 @@ func (s *userService) Create(ctx context.Context, user *repository.User) error {
 		return err
 	}
 
-	// 清除可能存在的 GetAllUsers 缓存
-	s.redisClient.Del(ctx, allUsersCacheKey)
+	// s.redisClient.Del(ctx, allUsersCacheKey) // 不再使用 allUsersCacheKey
 
 	// 发送欢迎邮件
 	go s.emailSvc.SendWelcomeEmail(user.Email, user.Username)
@@ -167,48 +147,25 @@ func (s *userService) GetTaskStatus(ctx context.Context, taskID string) (string,
 
 // GetByID 根据ID获取用户
 func (s *userService) GetByID(ctx context.Context, id int64) (*repository.User, error) {
-	cacheKey := userCacheKey(id)
-	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var user repository.User
-		if json.Unmarshal([]byte(cachedData), &user) == nil {
-			return &user, nil
-		}
-		s.logger.Error("Failed to unmarshal cached user data", "error", err, "key", cacheKey)
-	} else if err != redis.Nil {
-		s.logger.Error("Failed to get user from cache", "error", err, "key", cacheKey)
-	}
-
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
-	}
-	if user != nil {
-		jsonData, marshalErr := json.Marshal(user)
-		if marshalErr == nil {
-			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
-			if setErr != nil {
-				s.logger.Error("Failed to set user to cache", "error", setErr, "key", cacheKey)
-			}
-		} else {
-			s.logger.Error("Failed to marshal user data for cache", "error", marshalErr, "key", cacheKey)
-		}
 	}
 	return user, nil
 }
 
 // GetAllUsers 获取所有用户
 func (s *userService) GetAllUsers(ctx context.Context) ([]*repository.User, error) {
-	cachedData, err := s.redisClient.Get(ctx, allUsersCacheKey).Result()
-	if err == nil {
-		var users []*repository.User
-		if json.Unmarshal([]byte(cachedData), &users) == nil {
-			return users, nil
-		}
-		s.logger.Error("Failed to unmarshal cached all users data", "error", err)
-	} else if err != redis.Nil {
-		s.logger.Error("Failed to get all users from cache", "error", err)
-	}
+	// cachedData, err := s.redisClient.Get(ctx, allUsersCacheKey).Result() // 不再使用缓存
+	// if err == nil {
+	// 	var users []*repository.User
+	// 	if json.Unmarshal([]byte(cachedData), &users) == nil {
+	// 		return users, nil
+	// 	}
+	// 	s.logger.Error("Failed to unmarshal cached all users data", "error", err)
+	// } else if err != redis.Nil {
+	// 	s.logger.Error("Failed to get all users from cache", "error", err)
+	// }
 
 	// 数据库分页获取所有用户，避免一次性加载过多数据到内存
 	var allUsers []*repository.User
@@ -232,17 +189,17 @@ func (s *userService) GetAllUsers(ctx context.Context) ([]*repository.User, erro
 		}
 	}
 
-	if len(allUsers) > 0 {
-		jsonData, marshalErr := json.Marshal(allUsers)
-		if marshalErr == nil {
-			setErr := s.redisClient.Set(ctx, allUsersCacheKey, jsonData, allUsersCacheDuration).Err()
-			if setErr != nil {
-				s.logger.Error("Failed to set all users to cache", "error", setErr)
-			}
-		} else {
-			s.logger.Error("Failed to marshal all users data for cache", "error", marshalErr)
-		}
-	}
+	// if len(allUsers) > 0 { // 不再写入缓存
+	// 	jsonData, marshalErr := json.Marshal(allUsers)
+	// 	if marshalErr == nil {
+	// 		setErr := s.redisClient.Set(ctx, allUsersCacheKey, jsonData, allUsersCacheDuration).Err()
+	// 		if setErr != nil {
+	// 			s.logger.Error("Failed to set all users to cache", "error", setErr)
+	// 		}
+	// 	} else {
+	// 		s.logger.Error("Failed to marshal all users data for cache", "error", marshalErr)
+	// 	}
+	// }
 	return allUsers, nil
 }
 
@@ -258,28 +215,17 @@ func (s *userService) Update(ctx context.Context, user *repository.User) error {
 	err := s.userRepo.Update(ctx, user)
 	if err == nil {
 		// 更新成功，使相关缓存失效
-		s.redisClient.Del(ctx, userCacheKey(user.ID))
-		s.redisClient.Del(ctx, userByUsernameCacheKey(user.Username))
-		s.redisClient.Del(ctx, userByTokenCacheKey(user.Token))
-		s.redisClient.Del(ctx, allUsersCacheKey) // GetAllUsers 缓存也失效
+		// s.redisClient.Del(ctx, allUsersCacheKey) // 不再使用 allUsersCacheKey
 	}
 	return err
 }
 
 // Delete 删除用户
 func (s *userService) Delete(ctx context.Context, id int64) error {
-	// 删除前获取用户信息，以便清除相关缓存键
-	user, _ := s.GetByID(ctx, id) // 忽略错误，如果获取不到，部分缓存可能无法清除，但主要ID缓存会清除
-
 	err := s.userRepo.Delete(ctx, id)
 	if err == nil {
 		// 删除成功，使相关缓存失效
-		s.redisClient.Del(ctx, userCacheKey(id))
-		if user != nil {
-			s.redisClient.Del(ctx, userByUsernameCacheKey(user.Username))
-			s.redisClient.Del(ctx, userByTokenCacheKey(user.Token))
-		}
-		s.redisClient.Del(ctx, allUsersCacheKey)
+		// s.redisClient.Del(ctx, allUsersCacheKey) // 不再使用 allUsersCacheKey
 	}
 	return err
 }
@@ -302,7 +248,7 @@ func (s *userService) SendEmail(ctx context.Context, email, msgType string) erro
 		err = s.emailSvc.SendVerificationCode(email, code, 5)
 	case "reset_password":
 		// 获取用户信息，如果找不到用户则使用邮箱作为用户名
-		user, userErr := s.userRepo.GetByEmail(ctx, email)
+		user, userErr := s.userRepo.GetByEmail(ctx, email) // 直接从repo获取
 		userName := email
 		if userErr == nil && user != nil {
 			userName = user.Username
@@ -330,32 +276,9 @@ func (s *userService) SendEmail(ctx context.Context, email, msgType string) erro
 
 // GetByUsername 根据用户名获取用户
 func (s *userService) GetByUsername(ctx context.Context, username string) (*repository.User, error) {
-	cacheKey := userByUsernameCacheKey(username)
-	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var user repository.User
-		if json.Unmarshal([]byte(cachedData), &user) == nil {
-			return &user, nil
-		}
-		s.logger.Error("Failed to unmarshal cached user data by username", "error", err, "key", cacheKey)
-	} else if err != redis.Nil {
-		s.logger.Error("Failed to get user by username from cache", "error", err, "key", cacheKey)
-	}
-
 	user, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
 		return nil, err
-	}
-	if user != nil {
-		jsonData, marshalErr := json.Marshal(user)
-		if marshalErr == nil {
-			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
-			if setErr != nil {
-				s.logger.Error("Failed to set user by username to cache", "error", setErr, "key", cacheKey)
-			}
-		} else {
-			s.logger.Error("Failed to marshal user data for cache by username", "error", marshalErr, "key", cacheKey)
-		}
 	}
 	return user, nil
 }
@@ -422,32 +345,9 @@ func (s *userService) GetGroupName(ctx context.Context, groupID int64) (string, 
 
 // GetByToken 根据Token获取用户
 func (s *userService) GetByToken(ctx context.Context, token string) (*repository.User, error) {
-	cacheKey := userByTokenCacheKey(token)
-	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var user repository.User
-		if json.Unmarshal([]byte(cachedData), &user) == nil {
-			return &user, nil
-		}
-		s.logger.Error("Failed to unmarshal cached user data by token", "error", err, "key", cacheKey)
-	} else if err != redis.Nil {
-		s.logger.Error("Failed to get user by token from cache", "error", err, "key", cacheKey)
-	}
-
 	user, err := s.userRepo.GetByToken(ctx, token)
 	if err != nil {
 		return nil, err
-	}
-	if user != nil {
-		jsonData, marshalErr := json.Marshal(user)
-		if marshalErr == nil {
-			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
-			if setErr != nil {
-				s.logger.Error("Failed to set user by token to cache", "error", setErr, "key", cacheKey)
-			}
-		} else {
-			s.logger.Error("Failed to marshal user data for cache by token", "error", marshalErr, "key", cacheKey)
-		}
 	}
 	return user, nil
 }
@@ -494,34 +394,11 @@ func (s *userService) GetUserTrafficQuota(ctx context.Context, userID int64) (in
 	return *user.TrafficQuota, nil
 }
 
-// getCachedGroupByID 内部方法，用于获取带缓存的 Group 信息
+// getCachedGroupByID 内部方法，用于获取 Group 信息 (不再缓存)
 func (s *userService) getCachedGroupByID(ctx context.Context, groupID int64) (*repository.Group, error) {
-	cacheKey := groupCacheKey(groupID)
-	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var group repository.Group
-		if json.Unmarshal([]byte(cachedData), &group) == nil {
-			return &group, nil
-		}
-		s.logger.Error("Failed to unmarshal cached group data", "error", err, "key", cacheKey)
-	} else if err != redis.Nil {
-		s.logger.Error("Failed to get group from cache", "error", err, "key", cacheKey)
-	}
-
 	group, err := s.groupRepo.GetByID(ctx, groupID)
 	if err != nil {
 		return nil, err
-	}
-	if group != nil {
-		jsonData, marshalErr := json.Marshal(group)
-		if marshalErr == nil {
-			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, groupCacheDuration).Err()
-			if setErr != nil {
-				s.logger.Error("Failed to set group to cache", "error", setErr, "key", cacheKey)
-			}
-		} else {
-			s.logger.Error("Failed to marshal group data for cache", "error", marshalErr, "key", cacheKey)
-		}
 	}
 	return group, nil
 }
