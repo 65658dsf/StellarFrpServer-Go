@@ -32,6 +32,7 @@ const (
 	// 系统错误
 	ErrInternalServer       = "服务器内部错误"
 	ErrOperationTooFrequent = "请求过于频繁，请稍后重试"
+	ErrTrafficExhausted     = "用户流量已耗尽"
 )
 
 // 成功消息

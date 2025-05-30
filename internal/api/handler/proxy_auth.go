@@ -33,17 +33,19 @@ type FrpPluginResponse struct {
 
 // ProxyAuthHandler 隧道鉴权处理器
 type ProxyAuthHandler struct {
-	proxyService service.ProxyService
-	userService  service.UserService
-	logger       *logger.Logger
+	proxyService       service.ProxyService
+	userService        service.UserService
+	userTrafficService service.UserTrafficLogService
+	logger             *logger.Logger
 }
 
 // NewProxyAuthHandler 创建隧道鉴权处理器实例
-func NewProxyAuthHandler(proxyService service.ProxyService, userService service.UserService, logger *logger.Logger) *ProxyAuthHandler {
+func NewProxyAuthHandler(proxyService service.ProxyService, userService service.UserService, userTrafficService service.UserTrafficLogService, logger *logger.Logger) *ProxyAuthHandler {
 	return &ProxyAuthHandler{
-		proxyService: proxyService,
-		userService:  userService,
-		logger:       logger,
+		proxyService:       proxyService,
+		userService:        userService,
+		userTrafficService: userTrafficService,
+		logger:             logger,
 	}
 }
 
@@ -165,6 +167,40 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrBlacklisted,
+		})
+		return
+	}
+
+	// 检查用户流量是否超额
+	userTrafficLog, err := h.userTrafficService.GetUserTodayTraffic(context.Background(), username)
+	if err != nil {
+		h.logger.Error("获取用户今日流量失败", "username", username, "error", err)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: constants.ErrInternalServer,
+		})
+		return
+	}
+
+	totalTrafficQuotaBytes := int64(0)
+	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("获取用户组信息失败", "username", username, "error", err)
+		// 不直接返回错误，允许登录，但可能没有流量配额。后续检查 totalTrafficQuotaBytes > 0
+	} else if userGroup != nil {
+		totalTrafficQuotaBytes += userGroup.TrafficQuota // 直接使用，单位是Bytes
+	}
+
+	if user.TrafficQuota != nil { // User.TrafficQuota 单位是Bytes
+		totalTrafficQuotaBytes += *user.TrafficQuota
+	}
+	h.logger.Info("用户总流量配额", "total_traffic_quota_bytes", totalTrafficQuotaBytes, "user_traffic_log_total_traffic", userTrafficLog.TotalTraffic)
+	// 使用 userTrafficLog.TotalTraffic (总消耗流量) 进行比较
+	if totalTrafficQuotaBytes > 0 && userTrafficLog.TotalTraffic >= totalTrafficQuotaBytes {
+		h.logger.Warn("用户总流量已超额，禁止登录", "username", username, "used_total_bytes", userTrafficLog.TotalTraffic, "quota_bytes", totalTrafficQuotaBytes)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: constants.ErrTrafficExhausted,
 		})
 		return
 	}
@@ -356,58 +392,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	}
 
 	// 4. 根据隧道类型验证特定配置
-	if proxyType == "tcp" || proxyType == "udp" {
-		// 对于TCP/UDP类型，检查remote_port
-		remotePort, ok := content["remote_port"].(float64)
-		if !ok {
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "远程端口配置错误",
-			})
-			return
-		}
-
-		// 检查远程端口是否匹配
-		remotePortStr := proxy.RemotePort
-		if remotePortStr != "" && remotePortStr != strconv.Itoa(int(remotePort)) {
-			h.logger.Warn("远程端口不匹配", "expected", remotePortStr, "actual", remotePort)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "远程端口不匹配",
-			})
-			return
-		}
-	} else if proxyType == "http" || proxyType == "https" {
-		// 对于HTTP/HTTPS类型，检查custom_domains
-		customDomains, ok := content["custom_domains"].([]interface{})
-		if !ok || len(customDomains) == 0 {
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "域名配置错误",
-			})
-			return
-		}
-
-		// 检查域名是否匹配
-		var domainFound bool
-		for _, domain := range customDomains {
-			if domainStr, ok := domain.(string); ok && domainStr == proxy.Domain {
-				domainFound = true
-				break
-			}
-		}
-
-		if !domainFound {
-			h.logger.Warn("域名不匹配", "expected", proxy.Domain)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "域名不匹配",
-			})
-			return
-		}
-	}
-
-	// 5. 验证transport相关参数
 	if !h.verifyTransportParams(c, content, proxy, user) {
 		return
 	}

@@ -3,24 +3,39 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"stellarfrp/internal/repository"
 	"stellarfrp/internal/types"
 	"stellarfrp/pkg/logger"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 )
+
+const (
+	userTrafficLogCacheDuration = 5 * time.Minute
+)
+
+func userTrafficLogCacheKey(username string) string {
+	return fmt.Sprintf("usertrafficlog:%s", username)
+}
 
 // UserTrafficLogService 用户流量日志服务接口
 type UserTrafficLogService interface {
 	// 记录所有用户的流量信息
 	RecordAllUserTraffic(ctx context.Context) error
+	// 获取用户今日流量信息
+	GetUserTodayTraffic(ctx context.Context, username string) (*types.UserTrafficLog, error)
 }
 
 // userTrafficLogService 用户流量日志服务实现
 type userTrafficLogService struct {
 	nodeRepo        repository.NodeRepository
 	userTrafficRepo repository.UserTrafficLogRepository
+	redisClient     *redis.Client
 	httpClient      *http.Client
 	logger          *logger.Logger
 }
@@ -29,11 +44,13 @@ type userTrafficLogService struct {
 func NewUserTrafficLogService(
 	nodeRepo repository.NodeRepository,
 	userTrafficRepo repository.UserTrafficLogRepository,
+	redisClient *redis.Client,
 	logger *logger.Logger,
 ) UserTrafficLogService {
 	return &userTrafficLogService{
 		nodeRepo:        nodeRepo,
 		userTrafficRepo: userTrafficRepo,
+		redisClient:     redisClient,
 		httpClient:      &http.Client{Timeout: apiTimeout},
 		logger:          logger,
 	}
@@ -94,6 +111,8 @@ func (s *userTrafficLogService) RecordAllUserTraffic(ctx context.Context) error 
 			if err := s.userTrafficRepo.UpdateTraffic(ctx, username, todayTraffic); err != nil {
 				s.logger.Error("更新用户流量记录失败", "username", username, "error", err)
 			}
+			// 更新流量记录成功后，清除对应的缓存
+			s.redisClient.Del(context.Background(), userTrafficLogCacheKey(username))
 		}(username, todayTraffic)
 	}
 
@@ -102,6 +121,50 @@ func (s *userTrafficLogService) RecordAllUserTraffic(ctx context.Context) error 
 
 	s.logger.Info("所有用户流量记录完成", "userCount", len(userTraffic))
 	return nil
+}
+
+// GetUserTodayTraffic 获取用户今日流量信息
+func (s *userTrafficLogService) GetUserTodayTraffic(ctx context.Context, username string) (*types.UserTrafficLog, error) {
+	cacheKey := userTrafficLogCacheKey(username)
+	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var log types.UserTrafficLog
+		if json.Unmarshal([]byte(cachedData), &log) == nil {
+			return &log, nil
+		}
+		s.logger.Error("Failed to unmarshal cached user traffic log", "error", err, "key", cacheKey)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get user traffic log from cache", "error", err, "key", cacheKey)
+	}
+
+	// 首先确保表存在，以防首次查询时表还未创建
+	if err := s.userTrafficRepo.EnsureTableExists(ctx); err != nil {
+		s.logger.Error("确保流量记录表存在失败", "error", err, "username", username)
+		// 不直接返回错误，尝试继续查询，如果表真的不存在，后续查询会失败
+	}
+
+	log, err := s.userTrafficRepo.GetByUsername(ctx, username)
+	if err != nil {
+		s.logger.Error("从数据库获取用户流量记录失败", "username", username, "error", err)
+		return nil, err
+	}
+	// 如果用户没有流量记录，返回一个空的 UserTrafficLog 对象，避免nil指针
+	if log == nil {
+		return &types.UserTrafficLog{Username: username}, nil
+	}
+
+	// 存入缓存
+	jsonData, marshalErr := json.Marshal(log)
+	if marshalErr == nil {
+		setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userTrafficLogCacheDuration).Err()
+		if setErr != nil {
+			s.logger.Error("Failed to set user traffic log to cache", "error", setErr, "key", cacheKey)
+		}
+	} else {
+		s.logger.Error("Failed to marshal user traffic log for cache", "error", marshalErr, "key", cacheKey)
+	}
+
+	return log, nil
 }
 
 // collectNodeTraffic 收集指定节点的所有代理类型流量数据

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"stellarfrp/internal/constants"
@@ -16,6 +17,30 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
+const (
+	userCacheDuration     = 30 * time.Minute
+	groupCacheDuration    = 1 * time.Hour
+	allUsersCacheDuration = 5 * time.Minute
+)
+
+func userCacheKey(id int64) string {
+	return fmt.Sprintf("user:%d", id)
+}
+
+func userByUsernameCacheKey(username string) string {
+	return fmt.Sprintf("user:username:%s", username)
+}
+
+func userByTokenCacheKey(token string) string {
+	return fmt.Sprintf("user:token:%s", token)
+}
+
+func groupCacheKey(id int64) string {
+	return fmt.Sprintf("group:%d", id)
+}
+
+const allUsersCacheKey = "users:all"
+
 // UserService 用户服务接口
 type UserService interface {
 	Create(ctx context.Context, user *repository.User) error
@@ -27,6 +52,8 @@ type UserService interface {
 	Update(ctx context.Context, user *repository.User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, page, pageSize int) ([]*repository.User, error)
+	GetAllUsers(ctx context.Context) ([]*repository.User, error)
+	GetUsersWithExpiredGroup(ctx context.Context, groupID int64) ([]*repository.User, error)
 	Count(ctx context.Context) (int64, error)
 	GetTaskStatus(ctx context.Context, taskID string) (string, error)
 	SendEmail(ctx context.Context, email, msgType string) error
@@ -97,6 +124,9 @@ func (s *userService) Create(ctx context.Context, user *repository.User) error {
 		return err
 	}
 
+	// 清除可能存在的 GetAllUsers 缓存
+	s.redisClient.Del(ctx, allUsersCacheKey)
+
 	// 发送欢迎邮件
 	go s.emailSvc.SendWelcomeEmail(user.Email, user.Username)
 
@@ -137,17 +167,121 @@ func (s *userService) GetTaskStatus(ctx context.Context, taskID string) (string,
 
 // GetByID 根据ID获取用户
 func (s *userService) GetByID(ctx context.Context, id int64) (*repository.User, error) {
-	return s.userRepo.GetByID(ctx, id)
+	cacheKey := userCacheKey(id)
+	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var user repository.User
+		if json.Unmarshal([]byte(cachedData), &user) == nil {
+			return &user, nil
+		}
+		s.logger.Error("Failed to unmarshal cached user data", "error", err, "key", cacheKey)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get user from cache", "error", err, "key", cacheKey)
+	}
+
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		jsonData, marshalErr := json.Marshal(user)
+		if marshalErr == nil {
+			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
+			if setErr != nil {
+				s.logger.Error("Failed to set user to cache", "error", setErr, "key", cacheKey)
+			}
+		} else {
+			s.logger.Error("Failed to marshal user data for cache", "error", marshalErr, "key", cacheKey)
+		}
+	}
+	return user, nil
+}
+
+// GetAllUsers 获取所有用户
+func (s *userService) GetAllUsers(ctx context.Context) ([]*repository.User, error) {
+	cachedData, err := s.redisClient.Get(ctx, allUsersCacheKey).Result()
+	if err == nil {
+		var users []*repository.User
+		if json.Unmarshal([]byte(cachedData), &users) == nil {
+			return users, nil
+		}
+		s.logger.Error("Failed to unmarshal cached all users data", "error", err)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get all users from cache", "error", err)
+	}
+
+	// 数据库分页获取所有用户，避免一次性加载过多数据到内存
+	var allUsers []*repository.User
+	pageSize := 100 // 根据实际情况调整
+	for page := 1; ; page++ {
+		users, listErr := s.userRepo.List(ctx, (page-1)*pageSize, pageSize)
+		if listErr != nil {
+			s.logger.Error("Failed to list users from repository", "error", listErr, "page", page)
+			// 如果是第一页就出错，则返回错误，否则尝试返回已获取的部分
+			if page == 1 {
+				return nil, listErr
+			}
+			break
+		}
+		if len(users) == 0 {
+			break // 没有更多用户了
+		}
+		allUsers = append(allUsers, users...)
+		if len(users) < pageSize {
+			break // 最后一页
+		}
+	}
+
+	if len(allUsers) > 0 {
+		jsonData, marshalErr := json.Marshal(allUsers)
+		if marshalErr == nil {
+			setErr := s.redisClient.Set(ctx, allUsersCacheKey, jsonData, allUsersCacheDuration).Err()
+			if setErr != nil {
+				s.logger.Error("Failed to set all users to cache", "error", setErr)
+			}
+		} else {
+			s.logger.Error("Failed to marshal all users data for cache", "error", marshalErr)
+		}
+	}
+	return allUsers, nil
+}
+
+// GetUsersWithExpiredGroup 获取指定组中权限已过期的用户
+func (s *userService) GetUsersWithExpiredGroup(ctx context.Context, groupID int64) ([]*repository.User, error) {
+	// 注意：此方法通常不建议缓存，因为它依赖于当前时间，且结果集可能经常变化。
+	// 如果确实需要缓存，缓存时间应较短，并且需要有策略在用户组信息变更时清除缓存。
+	return s.userRepo.GetExpiredUsersByGroupID(ctx, groupID, time.Now())
 }
 
 // Update 更新用户信息
 func (s *userService) Update(ctx context.Context, user *repository.User) error {
-	return s.userRepo.Update(ctx, user)
+	err := s.userRepo.Update(ctx, user)
+	if err == nil {
+		// 更新成功，使相关缓存失效
+		s.redisClient.Del(ctx, userCacheKey(user.ID))
+		s.redisClient.Del(ctx, userByUsernameCacheKey(user.Username))
+		s.redisClient.Del(ctx, userByTokenCacheKey(user.Token))
+		s.redisClient.Del(ctx, allUsersCacheKey) // GetAllUsers 缓存也失效
+	}
+	return err
 }
 
 // Delete 删除用户
 func (s *userService) Delete(ctx context.Context, id int64) error {
-	return s.userRepo.Delete(ctx, id)
+	// 删除前获取用户信息，以便清除相关缓存键
+	user, _ := s.GetByID(ctx, id) // 忽略错误，如果获取不到，部分缓存可能无法清除，但主要ID缓存会清除
+
+	err := s.userRepo.Delete(ctx, id)
+	if err == nil {
+		// 删除成功，使相关缓存失效
+		s.redisClient.Del(ctx, userCacheKey(id))
+		if user != nil {
+			s.redisClient.Del(ctx, userByUsernameCacheKey(user.Username))
+			s.redisClient.Del(ctx, userByTokenCacheKey(user.Token))
+		}
+		s.redisClient.Del(ctx, allUsersCacheKey)
+	}
+	return err
 }
 
 // List 获取用户列表
@@ -196,7 +330,34 @@ func (s *userService) SendEmail(ctx context.Context, email, msgType string) erro
 
 // GetByUsername 根据用户名获取用户
 func (s *userService) GetByUsername(ctx context.Context, username string) (*repository.User, error) {
-	return s.userRepo.GetByUsername(ctx, username)
+	cacheKey := userByUsernameCacheKey(username)
+	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var user repository.User
+		if json.Unmarshal([]byte(cachedData), &user) == nil {
+			return &user, nil
+		}
+		s.logger.Error("Failed to unmarshal cached user data by username", "error", err, "key", cacheKey)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get user by username from cache", "error", err, "key", cacheKey)
+	}
+
+	user, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		jsonData, marshalErr := json.Marshal(user)
+		if marshalErr == nil {
+			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
+			if setErr != nil {
+				s.logger.Error("Failed to set user by username to cache", "error", setErr, "key", cacheKey)
+			}
+		} else {
+			s.logger.Error("Failed to marshal user data for cache by username", "error", marshalErr, "key", cacheKey)
+		}
+	}
+	return user, nil
 }
 
 // GetByEmail 根据邮箱获取用户
@@ -211,8 +372,8 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 	var err error
 
 	// 先尝试用户名登录
-	user, err = s.userRepo.GetByUsername(ctx, identifier)
-	if err != nil && err.Error() == "用户不存在" {
+	user, err = s.GetByUsername(ctx, identifier)
+	if errors.Is(err, redis.Nil) || (err != nil && err.Error() == "用户不存在") {
 		// 如果用户名不存在，尝试邮箱登录
 		user, err = s.userRepo.GetByEmail(ctx, identifier)
 		if err != nil {
@@ -220,6 +381,10 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 		}
 	} else if err != nil {
 		return nil, err
+	}
+
+	if user == nil {
+		return nil, errors.New(constants.ErrUserNotFound)
 	}
 
 	// 验证密码
@@ -233,7 +398,7 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 		user.Token = rand.String(32)
 
 		// 更新用户token
-		if err := s.userRepo.Update(ctx, user); err != nil {
+		if err := s.Update(ctx, user); err != nil {
 			return nil, err
 		}
 	}
@@ -243,33 +408,70 @@ func (s *userService) Login(ctx context.Context, identifier, password string) (*
 
 // GetGroupName 根据组ID获取组名称
 func (s *userService) GetGroupName(ctx context.Context, groupID int64) (string, error) {
-	group, err := s.groupRepo.GetByID(ctx, groupID)
+	group, err := s.getCachedGroupByID(ctx, groupID)
 	if err != nil {
-		s.logger.Error("Failed to get group", "error", err)
+		s.logger.Error("Failed to get group", "error", err, "groupID", groupID)
 		return "未知用户组", err
+	}
+	if group == nil {
+		s.logger.Warn("Group not found for GetGroupName", "groupID", groupID)
+		return "未知用户组", errors.New("group not found")
 	}
 	return group.Name, nil
 }
 
 // GetByToken 根据Token获取用户
 func (s *userService) GetByToken(ctx context.Context, token string) (*repository.User, error) {
-	return s.userRepo.GetByToken(ctx, token)
+	cacheKey := userByTokenCacheKey(token)
+	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var user repository.User
+		if json.Unmarshal([]byte(cachedData), &user) == nil {
+			return &user, nil
+		}
+		s.logger.Error("Failed to unmarshal cached user data by token", "error", err, "key", cacheKey)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get user by token from cache", "error", err, "key", cacheKey)
+	}
+
+	user, err := s.userRepo.GetByToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		jsonData, marshalErr := json.Marshal(user)
+		if marshalErr == nil {
+			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, userCacheDuration).Err()
+			if setErr != nil {
+				s.logger.Error("Failed to set user by token to cache", "error", setErr, "key", cacheKey)
+			}
+		} else {
+			s.logger.Error("Failed to marshal user data for cache by token", "error", marshalErr, "key", cacheKey)
+		}
+	}
+	return user, nil
 }
 
 // GetGroupTunnelLimit 获取用户组的隧道数量限制
 func (s *userService) GetGroupTunnelLimit(ctx context.Context, groupID int64) (int, error) {
-	group, err := s.groupRepo.GetByID(ctx, groupID)
+	group, err := s.getCachedGroupByID(ctx, groupID)
 	if err != nil {
 		return 0, err
+	}
+	if group == nil {
+		return 0, errors.New("group not found")
 	}
 	return group.TunnelLimit, nil
 }
 
 // GetUserBandwidth 获取用户带宽限制
 func (s *userService) GetUserBandwidth(ctx context.Context, userID int64) (int, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := s.GetByID(ctx, userID)
 	if err != nil {
 		return 0, err
+	}
+	if user == nil {
+		return 0, errors.New("user not found")
 	}
 	if user.Bandwidth == nil {
 		return 0, nil
@@ -279,9 +481,12 @@ func (s *userService) GetUserBandwidth(ctx context.Context, userID int64) (int, 
 
 // GetUserTrafficQuota 获取用户流量配额
 func (s *userService) GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := s.GetByID(ctx, userID)
 	if err != nil {
 		return 0, err
+	}
+	if user == nil {
+		return 0, errors.New("user not found")
 	}
 	if user.TrafficQuota == nil {
 		return 0, nil
@@ -289,9 +494,41 @@ func (s *userService) GetUserTrafficQuota(ctx context.Context, userID int64) (in
 	return *user.TrafficQuota, nil
 }
 
+// getCachedGroupByID 内部方法，用于获取带缓存的 Group 信息
+func (s *userService) getCachedGroupByID(ctx context.Context, groupID int64) (*repository.Group, error) {
+	cacheKey := groupCacheKey(groupID)
+	cachedData, err := s.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var group repository.Group
+		if json.Unmarshal([]byte(cachedData), &group) == nil {
+			return &group, nil
+		}
+		s.logger.Error("Failed to unmarshal cached group data", "error", err, "key", cacheKey)
+	} else if err != redis.Nil {
+		s.logger.Error("Failed to get group from cache", "error", err, "key", cacheKey)
+	}
+
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group != nil {
+		jsonData, marshalErr := json.Marshal(group)
+		if marshalErr == nil {
+			setErr := s.redisClient.Set(ctx, cacheKey, jsonData, groupCacheDuration).Err()
+			if setErr != nil {
+				s.logger.Error("Failed to set group to cache", "error", setErr, "key", cacheKey)
+			}
+		} else {
+			s.logger.Error("Failed to marshal group data for cache", "error", marshalErr, "key", cacheKey)
+		}
+	}
+	return group, nil
+}
+
 // GetUserGroup 获取用户所属的用户组
 func (s *userService) GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := s.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +537,7 @@ func (s *userService) GetUserGroup(ctx context.Context, userID int64) (*reposito
 		return nil, errors.New("用户不存在")
 	}
 
-	return s.groupRepo.GetByID(ctx, user.GroupID)
+	return s.getCachedGroupByID(ctx, user.GroupID)
 }
 
 // ResetToken 重置用户token
@@ -310,15 +547,18 @@ func (s *userService) ResetToken(ctx context.Context, identifier, password strin
 	var err error
 
 	// 先尝试用户名登录
-	user, err = s.userRepo.GetByUsername(ctx, identifier)
-	if err != nil && err.Error() == "用户不存在" {
-		// 如果用户名不存在，尝试邮箱登录
+	user, err = s.GetByUsername(ctx, identifier)
+	if errors.Is(err, redis.Nil) || (err != nil && err.Error() == "用户不存在") {
 		user, err = s.userRepo.GetByEmail(ctx, identifier)
 		if err != nil {
 			return nil, errors.New("用户不存在")
 		}
 	} else if err != nil {
 		return nil, err
+	}
+
+	if user == nil {
+		return nil, errors.New("用户不存在")
 	}
 
 	// 验证密码
@@ -330,7 +570,7 @@ func (s *userService) ResetToken(ctx context.Context, identifier, password strin
 	user.Token = rand.String(32)
 
 	// 更新用户token
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	if err := s.Update(ctx, user); err != nil {
 		return nil, err
 	}
 
@@ -343,7 +583,7 @@ func (s *userService) AdminResetToken(ctx context.Context, user *repository.User
 	user.Token = rand.String(32)
 
 	// 更新用户token
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	if err := s.Update(ctx, user); err != nil {
 		return err
 	}
 
@@ -352,18 +592,24 @@ func (s *userService) AdminResetToken(ctx context.Context, user *repository.User
 
 // GetGroupTraffic 获取用户组的流量
 func (s *userService) GetGroupTraffic(ctx context.Context, groupID int64) (int64, error) {
-	group, err := s.groupRepo.GetByID(ctx, groupID)
+	group, err := s.getCachedGroupByID(ctx, groupID)
 	if err != nil {
 		return 0, err
+	}
+	if group == nil {
+		return 0, errors.New("group not found")
 	}
 	return group.TrafficQuota, nil
 }
 
 // GetUserUsedTraffic 获取用户已使用的流量
 func (s *userService) GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := s.GetByID(ctx, userID)
 	if err != nil {
 		return 0, err
+	}
+	if user == nil {
+		return 0, errors.New("user not found")
 	}
 
 	// 通过用户名获取流量日志
@@ -388,9 +634,12 @@ func (s *userService) Count(ctx context.Context) (int64, error) {
 
 // IsUserBlacklisted 检查用户是否在黑名单中（GroupID为6）
 func (s *userService) IsUserBlacklisted(ctx context.Context, userID int64) (bool, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := s.GetByID(ctx, userID)
 	if err != nil {
 		return false, err
+	}
+	if user == nil {
+		return false, errors.New("user not found")
 	}
 
 	// 黑名单用户组ID为6
@@ -399,9 +648,12 @@ func (s *userService) IsUserBlacklisted(ctx context.Context, userID int64) (bool
 
 // IsUserBlacklistedByUsername 根据用户名检查用户是否在黑名单中
 func (s *userService) IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error) {
-	user, err := s.userRepo.GetByUsername(ctx, username)
+	user, err := s.GetByUsername(ctx, username)
 	if err != nil {
 		return false, err
+	}
+	if user == nil {
+		return false, errors.New("user not found")
 	}
 
 	// 黑名单用户组ID为6
@@ -410,9 +662,12 @@ func (s *userService) IsUserBlacklistedByUsername(ctx context.Context, username 
 
 // IsUserBlacklistedByToken 根据Token检查用户是否在黑名单中
 func (s *userService) IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error) {
-	user, err := s.userRepo.GetByToken(ctx, token)
+	user, err := s.GetByToken(ctx, token)
 	if err != nil {
 		return false, err
+	}
+	if user == nil {
+		return false, errors.New("user not found")
 	}
 
 	// 黑名单用户组ID为6

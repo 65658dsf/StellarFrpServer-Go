@@ -65,7 +65,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	proxyService := service.NewProxyService(proxyRepo, nodeService, userService, redisClient, logger)
 	nodeTrafficService := service.NewNodeTrafficService(nodeRepo, nodeTrafficRepo, logger)
 	userCheckinService := service.NewUserCheckinService(userRepo, groupRepo, userCheckinRepo, redisClient, logger)
-	userTrafficLogService := service.NewUserTrafficLogService(nodeRepo, userTrafficLogRepo, logger)
+	userTrafficLogService := service.NewUserTrafficLogService(nodeRepo, userTrafficLogRepo, redisClient, logger)
 	adService := service.NewAdService(adRepo, redisClient, logger)
 	announcementService := service.NewAnnouncementService(announcementRepo, redisClient, logger)
 	systemService := service.NewSystemService(systemRepo, redisClient, logger)
@@ -75,7 +75,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeScheduler.Start() // 启动节点调度
 
 	// 初始化流量记录调度器
-	trafficScheduler := scheduler.NewTrafficScheduler(userTrafficLogService, logger)
+	trafficScheduler := scheduler.NewTrafficScheduler(userTrafficLogService, userService, proxyService, nodeService, logger)
 	trafficScheduler.Start() // 启动流量记录调度
 
 	// 初始化处理器
@@ -83,7 +83,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	userCheckinHandler := handler.NewUserCheckinHandler(userService, userCheckinService, logger)
 	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
-	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, logger)
+	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, userTrafficLogService, logger)
 	adHandler := handler.NewAdHandler(adService, logger)
 	announcementHandler := handler.NewAnnouncementHandler(announcementService, logger)
 	systemHandler := handler.NewSystemHandler(systemService, logger)

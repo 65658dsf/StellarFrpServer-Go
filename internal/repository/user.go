@@ -44,6 +44,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*User, error)
+	GetExpiredUsersByGroupID(ctx context.Context, groupID int64, expirationTime time.Time) ([]*User, error)
 	Count(ctx context.Context) (int64, error)
 	SearchUsers(ctx context.Context, keyword string) ([]*User, error)
 }
@@ -199,5 +200,19 @@ func (r *userRepository) SearchUsers(ctx context.Context, keyword string) ([]*Us
 		return nil, err
 	}
 
+	return users, nil
+}
+
+// GetExpiredUsersByGroupID 根据 GroupID 和过期时间获取用户列表
+func (r *userRepository) GetExpiredUsersByGroupID(ctx context.Context, groupID int64, expirationTime time.Time) ([]*User, error) {
+	users := []*User{}
+	query := `SELECT * FROM users WHERE group_id = ? AND group_time IS NOT NULL AND group_time < ?`
+	err := r.db.SelectContext(ctx, &users, query, groupID, expirationTime)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return users, nil // 没有找到匹配的用户，返回空列表而不是错误
+		}
+		return nil, err
+	}
 	return users, nil
 }
