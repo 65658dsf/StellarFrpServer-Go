@@ -17,6 +17,7 @@ type Config struct {
 	Redis    RedisConfig
 	Email    EmailConfig
 	Geetest  GeetestConfig
+	AliCloud AliCloudConfig
 }
 
 // DatabaseConfig MySQL数据库配置
@@ -60,6 +61,14 @@ type GeetestConfig struct {
 	CaptchaID  string // 验证ID
 	CaptchaKey string // 验证密钥
 	APIServer  string // API服务器地址
+}
+
+// AliCloudConfig 阿里云配置
+type AliCloudConfig struct {
+	AppCode     string // AppCode
+	Host        string // API主机地址
+	Path        string // API路径
+	IdentityKey string // 实名认证加密密钥
 }
 
 // Load 从环境变量加载配置
@@ -145,6 +154,12 @@ func Load() (*Config, error) {
 			CaptchaID:  os.Getenv("GEETEST_CAPTCHA_ID"),
 			CaptchaKey: os.Getenv("GEETEST_CAPTCHA_KEY"),
 			APIServer:  os.Getenv("GEETEST_API_SERVER"),
+		},
+		AliCloud: AliCloudConfig{
+			AppCode:     os.Getenv("ALICLOUD_APPCODE"),
+			Host:        os.Getenv("ALICLOUD_HOST"),
+			Path:        os.Getenv("ALICLOUD_PATH"),
+			IdentityKey: os.Getenv("ALICLOUD_IDENTITY_KEY"),
 		},
 	}, nil
 }

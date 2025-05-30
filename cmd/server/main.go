@@ -12,6 +12,8 @@ import (
 
 	"stellarfrp/config"
 	"stellarfrp/internal/api"
+	"stellarfrp/internal/api/handler"
+	"stellarfrp/internal/repository"
 	"stellarfrp/pkg/database"
 	"stellarfrp/pkg/geetest"
 	"stellarfrp/pkg/logger"
@@ -49,8 +51,14 @@ func main() {
 		cfg.Geetest.APIServer,
 	)
 
+	// 初始化 Repositories
+	userRepo := repository.NewUserRepository(db)
+
+	// 初始化 Handlers
+	realNameAuthHandler := handler.NewRealNameAuthHandler(cfg, userRepo, logger)
+
 	// 初始化API路由
-	router := api.SetupRouter(cfg, logger, db, redisClient, geetestClient)
+	router := api.SetupRouter(cfg, logger, db, redisClient, geetestClient, realNameAuthHandler)
 
 	// 创建HTTP服务器
 	server := &http.Server{

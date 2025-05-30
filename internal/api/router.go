@@ -20,7 +20,7 @@ import (
 )
 
 // SetupRouter 设置API路由
-func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisClient *redis.Client, geetestClient *geetest.GeetestClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisClient *redis.Client, geetestClient *geetest.GeetestClient, realNameAuthHandler *handler.RealNameAuthHandler) *gin.Engine {
 	// 创建Gin引擎
 	if cfg.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -108,7 +108,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
 
 	// 注册需要认证的API路由
-	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)
+	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler)
 
 	// 注册管理员API路由
 	adminRouter := v1.Group("/admin")

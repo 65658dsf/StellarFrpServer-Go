@@ -45,31 +45,25 @@ func RegisterAuthRoutes(
 	nodeHandler *handler.NodeHandler,
 	proxyHandler *handler.ProxyHandler,
 	proxyAuthHandler *handler.ProxyAuthHandler,
+	realNameAuthHandler *handler.RealNameAuthHandler,
 ) {
-	// 用户信息相关路由（需要认证）
-	users := router.Group("/users")
-	{
-		users.GET("/info", userHandler.GetUserInfo)
-		users.POST("/resettoken", userHandler.ResetToken)
+	// 用户信息、签到、实名认证等路由 (需要认证)
+	usersGroup := router.Group("/users")                                                 // 创建 /users 子分组
+	RegisterUserRoutes(usersGroup, userHandler, userCheckinHandler, realNameAuthHandler) // 调用users.go中的函数
 
-		// 用户签到相关路由
-		users.POST("/checkin", userCheckinHandler.Checkin)
-		users.GET("/checkin/status", userCheckinHandler.GetCheckinStatus)
-		users.GET("/checkin/logs", userCheckinHandler.GetCheckinLogs)
-	}
-
-	// 异步任务路由
-	tasks := router.Group("/tasks")
+	// 异步任务路由 (从原来的 users.go 中移到这里，或者保持独立)
+	// 如果 tasks 路由也是认证路由，且希望在 /api/v1/tasks 下
+	tasksGroup := router.Group("/tasks")
 	{
-		tasks.POST("/", userHandler.CreateAsync)
-		tasks.GET("/:id", userHandler.GetTaskStatus)
+		tasksGroup.POST("/", userHandler.CreateAsync) // 注意 userHandler 是否合适，或者需要 TaskHandler
+		tasksGroup.GET("/:id", userHandler.GetTaskStatus)
 	}
 
 	// 注册节点相关路由
-	RegisterNodeRoutes(router, nodeHandler)
+	RegisterNodeRoutes(router, nodeHandler) // router 是 /api/v1 (认证过的)
 
 	// 注册隧道相关路由
-	RegisterProxyRoutes(router, proxyHandler, proxyAuthHandler)
+	RegisterProxyRoutes(router, proxyHandler, proxyAuthHandler) // router 是 /api/v1 (认证过的)
 }
 
 // 保留原有的RegisterRoutes函数以保持兼容性
@@ -83,12 +77,13 @@ func RegisterRoutes(
 	adHandler *handler.AdHandler,
 	announcementHandler *handler.AnnouncementHandler,
 	systemHandler *handler.SystemHandler,
+	realNameAuthHandler *handler.RealNameAuthHandler,
 ) {
 	// 注册公共路由
 	RegisterPublicRoutes(router, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
 
 	// 注册需要认证的路由
-	RegisterAuthRoutes(router, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler)
+	RegisterAuthRoutes(router, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler)
 }
 
 // RegisterAdRoutes 注册广告相关路由
