@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	userTrafficLogCacheDuration = 5 * time.Minute
+	userTrafficLogCacheDuration = 2 * time.Minute
 )
 
 func userTrafficLogCacheKey(username string) string {

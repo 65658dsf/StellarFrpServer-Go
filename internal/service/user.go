@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	userCacheDuration     = 30 * time.Minute
+	userCacheDuration     = 10 * time.Minute
 	groupCacheDuration    = 1 * time.Hour
 	allUsersCacheDuration = 5 * time.Minute
 )
