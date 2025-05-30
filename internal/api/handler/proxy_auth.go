@@ -62,8 +62,6 @@ func (h *ProxyAuthHandler) HandleProxyAuth(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("收到隧道鉴权请求", "op", req.Op, "version", req.Version)
-
 	// 根据操作类型处理请求
 	switch req.Op {
 	case "Login":
@@ -82,26 +80,16 @@ func (h *ProxyAuthHandler) HandleProxyAuth(c *gin.Context) {
 
 // handleLoginAuth 处理登录鉴权
 func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest) {
-	// 提取用户信息
 	content := req.Content
 	username, _ := content["user"].(string)
 
-	// 记录完整的请求内容，帮助调试
-	h.logger.Info("隧道登录请求详情", "content", content)
-
-	// 获取token，并记录token获取过程
 	var token string
 	metas, hasMetas := content["metas"].(map[string]interface{})
 	if hasMetas {
 		tokenVal, hasToken := metas["token"]
 		if hasToken {
 			token, _ = tokenVal.(string)
-			h.logger.Info("从metas中获取到token", "token_exists", token != "")
-		} else {
-			h.logger.Warn("metas中不存在token字段")
 		}
-	} else {
-		h.logger.Warn("请求中不存在metas字段或格式错误")
 	}
 
 	if username == "" {
@@ -115,7 +103,6 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 	// 从数据库获取用户信息
 	user, err := h.userService.GetByUsername(context.Background(), username)
 	if err != nil || user == nil {
-		h.logger.Warn("用户不存在", "username", username, "error", err)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrAuthFailed,
@@ -123,17 +110,8 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 		return
 	}
 
-	h.logger.Info("用户信息获取成功", "username", username, "user_token_exists", user.Token != "")
-
-	// 验证token：使用数据库中存储的token进行对比
+	// 验证token
 	if user.Token != token {
-		h.logger.Warn("用户Token不匹配",
-			"username", username,
-			"expected_token", user.Token,
-			"actual_token", token,
-			"token_length", len(token),
-			"expected_length", len(user.Token))
-
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInvalidToken,
@@ -143,7 +121,6 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 
 	// 验证用户状态
 	if user.Status != 1 {
-		h.logger.Warn("用户账号被禁用", "username", username, "status", user.Status)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrAccountDisabled,
@@ -154,7 +131,7 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 	// 检查用户是否在黑名单中
 	isBlacklisted, err := h.userService.IsUserBlacklistedByUsername(context.Background(), username)
 	if err != nil {
-		h.logger.Error("检查黑名单失败", "username", username, "error", err)
+		h.logger.Error("检查黑名单失败", "error", err)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInternalServer,
@@ -163,7 +140,6 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 	}
 
 	if isBlacklisted {
-		h.logger.Warn("用户在黑名单中", "username", username)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrBlacklisted,
@@ -174,7 +150,7 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 	// 检查用户流量是否超额
 	userTrafficLog, err := h.userTrafficService.GetUserTodayTraffic(context.Background(), username)
 	if err != nil {
-		h.logger.Error("获取用户今日流量失败", "username", username, "error", err)
+		h.logger.Error("获取用户今日流量失败", "error", err)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInternalServer,
@@ -185,19 +161,16 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 	totalTrafficQuotaBytes := int64(0)
 	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
 	if err != nil {
-		h.logger.Error("获取用户组信息失败", "username", username, "error", err)
-		// 不直接返回错误，允许登录，但可能没有流量配额。后续检查 totalTrafficQuotaBytes > 0
+		h.logger.Error("获取用户组信息失败", "error", err)
 	} else if userGroup != nil {
-		totalTrafficQuotaBytes += userGroup.TrafficQuota // 直接使用，单位是Bytes
+		totalTrafficQuotaBytes += userGroup.TrafficQuota
 	}
 
-	if user.TrafficQuota != nil { // User.TrafficQuota 单位是Bytes
+	if user.TrafficQuota != nil {
 		totalTrafficQuotaBytes += *user.TrafficQuota
 	}
-	h.logger.Info("用户总流量配额", "total_traffic_quota_bytes", totalTrafficQuotaBytes, "user_traffic_log_total_traffic", userTrafficLog.TotalTraffic)
-	// 使用 userTrafficLog.TotalTraffic (总消耗流量) 进行比较
+
 	if totalTrafficQuotaBytes > 0 && userTrafficLog.TotalTraffic >= totalTrafficQuotaBytes {
-		h.logger.Warn("用户总流量已超额，禁止登录", "username", username, "used_total_bytes", userTrafficLog.TotalTraffic, "quota_bytes", totalTrafficQuotaBytes)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrTrafficExhausted,
@@ -205,8 +178,6 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 		return
 	}
 
-	// 登录成功
-	h.logger.Info("用户登录成功", "username", username, "group_id", user.GroupID)
 	c.JSON(http.StatusOK, FrpPluginResponse{
 		Reject:   false,
 		Unchange: true,
@@ -217,12 +188,8 @@ func (h *ProxyAuthHandler) handleLoginAuth(c *gin.Context, req FrpPluginRequest)
 func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginRequest) {
 	content := req.Content
 
-	// 记录完整的请求内容，帮助调试
-	h.logger.Info("新隧道创建请求详情", "content", content)
-
 	userInfo, ok := content["user"].(map[string]interface{})
 	if !ok {
-		h.logger.Warn("用户信息格式错误", "user_info_exists", content["user"] != nil)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInvalidFormat,
@@ -230,25 +197,17 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	// 1. 提取用户信息并校验用户权限
 	username, _ := userInfo["user"].(string)
 
-	// 获取token，并记录token获取过程
 	var token string
 	metas, metasOk := userInfo["metas"].(map[string]interface{})
 	if metasOk {
 		tokenVal, hasToken := metas["token"]
 		if hasToken {
 			token, _ = tokenVal.(string)
-			h.logger.Info("从metas中获取到token", "token_exists", token != "", "token_length", len(token))
-		} else {
-			h.logger.Warn("metas中不存在token字段")
 		}
-	} else {
-		h.logger.Warn("请求中不存在metas字段或格式错误")
 	}
 
-	// 检查用户名和token
 	if username == "" {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
@@ -260,7 +219,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	// 从数据库获取用户信息
 	user, err := h.userService.GetByUsername(context.Background(), username)
 	if err != nil || user == nil {
-		h.logger.Warn("用户不存在", "username", username, "error", err)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrAuthFailed,
@@ -268,17 +226,8 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	h.logger.Info("用户信息获取成功", "username", username, "user_token_exists", user.Token != "", "token_length", len(user.Token))
-
 	// 验证token
 	if user.Token != token {
-		h.logger.Warn("用户Token不匹配",
-			"username", username,
-			"expected_token", user.Token,
-			"actual_token", token,
-			"token_length", len(token),
-			"expected_length", len(user.Token))
-
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInvalidToken,
@@ -288,7 +237,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 
 	// 验证用户状态
 	if user.Status != 1 {
-		h.logger.Warn("用户账号被禁用", "username", username, "status", user.Status)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrAccountDisabled,
@@ -299,7 +247,7 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	// 检查用户是否在黑名单中
 	isBlacklisted, err := h.userService.IsUserBlacklistedByUsername(context.Background(), username)
 	if err != nil {
-		h.logger.Error("检查黑名单失败", "username", username, "error", err)
+		h.logger.Error("检查黑名单失败", "error", err)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInternalServer,
@@ -308,7 +256,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	}
 
 	if isBlacklisted {
-		h.logger.Warn("用户在黑名单中", "username", username)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrBlacklisted,
@@ -316,7 +263,7 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	// 3. 解析隧道名称并校验格式
+	// 解析隧道名称并校验格式
 	fullProxyName, _ := content["proxy_name"].(string)
 	if fullProxyName == "" {
 		c.JSON(http.StatusOK, FrpPluginResponse{
@@ -329,7 +276,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	// 验证隧道名称格式：用户名.隧道名
 	parts := strings.Split(fullProxyName, ".")
 	if len(parts) != 2 || parts[0] != username {
-		h.logger.Warn("隧道名称格式错误", "proxy_name", fullProxyName)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrProxyNameFormat,
@@ -351,9 +297,7 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	// 如果隧道不存在，拒绝请求
 	if proxy == nil {
-		h.logger.Warn("隧道不存在", "username", username, "proxy_name", proxyName)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrProxyNotFound,
@@ -361,9 +305,7 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	// 检查隧道类型是否匹配
 	if proxy.ProxyType != proxyType {
-		h.logger.Warn("隧道类型不匹配", "expected", proxy.ProxyType, "actual", proxyType)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrProxyTypeMismatch,
@@ -383,7 +325,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 	}
 
 	if !hasAccess {
-		h.logger.Warn("用户无权使用此节点", "username", username, "node_id", proxy.Node)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrNoNodeAccess,
@@ -391,7 +332,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		return
 	}
 
-	// 4. 根据隧道类型验证特定配置
 	if !h.verifyTransportParams(c, content, proxy, user) {
 		return
 	}
@@ -408,7 +348,6 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 		h.logger.Error("更新隧道状态失败", "error", err)
 	}
 
-	// 鉴权通过
 	c.JSON(http.StatusOK, FrpPluginResponse{
 		Reject:   false,
 		Unchange: true,
@@ -419,15 +358,33 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[string]interface{}, proxy *repository.Proxy, user *repository.User) bool {
 	// 获取传输参数
 	useEncryption, hasEncryption := content["use_encryption"].(bool)
+	useCompression, hasCompression := content["use_compression"].(bool)
 	bandwidthLimit, hasBandwidth := content["bandwidth_limit"].(string)
 	bandwidthLimitMode, hasBandwidthMode := content["bandwidth_limit_mode"].(string)
 
-	// 检查传输配置
-	if hasEncryption && strconv.FormatBool(useEncryption) != proxy.UseEncryption {
-		h.logger.Warn("加密设置不匹配", "expected", proxy.UseEncryption, "actual", useEncryption)
+	// 检查参数是否存在
+	if !hasEncryption || !hasCompression || !hasBandwidth || !hasBandwidthMode {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
-			RejectReason: "加密设置不匹配",
+			RejectReason: "非法传参",
+		})
+		return false
+	}
+
+	// 检查传输配置
+	if strconv.FormatBool(useEncryption) != proxy.UseEncryption {
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "非法传参",
+		})
+		return false
+	}
+
+	// 检查压缩配置
+	if strconv.FormatBool(useCompression) != proxy.UseCompression {
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "非法传参",
 		})
 		return false
 	}
@@ -451,26 +408,20 @@ func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[str
 	totalBandwidth := userGroup.BandwidthLimit + userBandwidth
 	expectedBandwidth := fmt.Sprintf("%d", totalBandwidth) + "MB"
 
-	// 检查带宽限制 - 更灵活的比较方式
-	if hasBandwidth {
-		// 移除可能存在的引号
-		cleanBandwidth := strings.Trim(bandwidthLimit, "\"")
-		cleanExpected := expectedBandwidth
+	// 检查带宽限制
+	cleanBandwidth := strings.Trim(bandwidthLimit, "\"")
+	cleanExpected := expectedBandwidth
 
-		if cleanBandwidth != cleanExpected {
-			h.logger.Warn("带宽限制不匹配", "expected", expectedBandwidth, "actual", bandwidthLimit,
-				"cleanExpected", cleanExpected, "cleanBandwidth", cleanBandwidth)
-			c.JSON(http.StatusOK, FrpPluginResponse{
-				Reject:       true,
-				RejectReason: "带宽限制设置不匹配",
-			})
-			return false
-		}
+	if cleanBandwidth != cleanExpected {
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "带宽限制设置不匹配",
+		})
+		return false
 	}
 
 	// 检查带宽限制模式
-	if hasBandwidthMode && bandwidthLimitMode != "server" {
-		h.logger.Warn("带宽限制模式不匹配", "expected", "server", "actual", bandwidthLimitMode)
+	if bandwidthLimitMode != "server" {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: "带宽限制模式必须为server",
@@ -483,7 +434,6 @@ func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[str
 
 // handleCloseProxyAuth 处理关闭隧道鉴权
 func (h *ProxyAuthHandler) handleCloseProxyAuth(c *gin.Context, req FrpPluginRequest) {
-	// 这里简单地允许关闭隧道操作
 	content := req.Content
 	userInfo, ok := content["user"].(map[string]interface{})
 	if !ok {

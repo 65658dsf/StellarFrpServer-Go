@@ -90,6 +90,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 
 	// 初始化管理员处理器
 	userAdminHandler := admin.NewUserAdminHandler(userService, logger)
+	announcementAdminHandler := admin.NewAnnouncementAdminHandler(announcementService, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -114,7 +115,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adminRouter := v1.Group("/admin")
 	// 添加管理员认证中间件
 	adminRouter.Use(middleware.AdminAuth(userService))
-	admin.RegisterAdminRoutes(adminRouter, userAdminHandler)
+	admin.RegisterAdminRoutes(adminRouter, userAdminHandler, announcementAdminHandler)
 
 	return router
 }

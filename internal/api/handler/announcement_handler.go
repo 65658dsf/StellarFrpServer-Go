@@ -34,7 +34,6 @@ func NewAnnouncementHandler(announcementService *service.AnnouncementService, lo
 // @Success 200 {object} map[string]interface{} "成功"
 // @Router /api/v1/announcements [get]
 func (h *AnnouncementHandler) GetAnnouncements(c *gin.Context) {
-	// 解析分页参数
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "10")
 
@@ -48,7 +47,6 @@ func (h *AnnouncementHandler) GetAnnouncements(c *gin.Context) {
 		limit = 10
 	}
 
-	// 获取公告列表
 	ctx := c.Request.Context()
 	paginatedAnnouncements, err := h.announcementService.GetAnnouncements(ctx, page, limit)
 	if err != nil {
@@ -77,7 +75,6 @@ func (h *AnnouncementHandler) GetAnnouncements(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "成功"
 // @Router /api/v1/announcements/{id} [get]
 func (h *AnnouncementHandler) GetAnnouncementByID(c *gin.Context) {
-	// 解析公告ID
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -88,14 +85,13 @@ func (h *AnnouncementHandler) GetAnnouncementByID(c *gin.Context) {
 		return
 	}
 
-	// 获取公告详情
 	ctx := c.Request.Context()
 	announcement, err := h.announcementService.GetAnnouncementByID(ctx, id)
 	if err != nil {
 		h.logger.Error("获取公告详情失败", "id", id, "error", err)
 		c.JSON(http.StatusOK, gin.H{
 			"code": 404,
-			"msg":  "公告不存在",
+			"msg":  "公告不存在或获取失败",
 		})
 		return
 	}

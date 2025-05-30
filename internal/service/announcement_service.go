@@ -105,3 +105,54 @@ func (s *AnnouncementService) InvalidateCache(ctx context.Context) error {
 	}
 	return iter.Err()
 }
+
+// CreateAnnouncement 创建公告
+func (s *AnnouncementService) CreateAnnouncement(ctx context.Context, a *model.Announcement) error {
+	err := s.announcementRepo.CreateAnnouncement(ctx, a)
+	if err == nil {
+		s.InvalidateCache(ctx)
+	}
+	return err
+}
+
+// UpdateAnnouncement 更新公告
+func (s *AnnouncementService) UpdateAnnouncement(ctx context.Context, a *model.Announcement) error {
+	a.PublishDate = time.Now() // 更新发布时间为当前时间
+	err := s.announcementRepo.UpdateAnnouncement(ctx, a)
+	if err == nil {
+		s.InvalidateCache(ctx)
+	}
+	return err
+}
+
+// DeleteAnnouncement 删除公告
+func (s *AnnouncementService) DeleteAnnouncement(ctx context.Context, id int64) error {
+	err := s.announcementRepo.DeleteAnnouncement(ctx, id)
+	if err == nil {
+		s.InvalidateCache(ctx)
+	}
+	return err
+}
+
+// GetAnnouncementsAdmin 管理员获取所有公告（含不可见）
+func (s *AnnouncementService) GetAnnouncementsAdmin(ctx context.Context, page, limit int) (*model.PaginatedAnnouncements, error) {
+	total, err := s.announcementRepo.CountAnnouncementsAdmin(ctx)
+	if err != nil {
+		s.logger.Error("获取公告总数失败", "error", err)
+		return nil, err
+	}
+	announcements, err := s.announcementRepo.GetAnnouncementsAdmin(ctx, page, limit)
+	if err != nil {
+		s.logger.Error("获取公告列表失败", "error", err)
+		return nil, err
+	}
+	return &model.PaginatedAnnouncements{
+		Total: total,
+		Items: announcements,
+	}, nil
+}
+
+// GetAnnouncementByIDAdmin 管理员获取单个公告（含不可见）
+func (s *AnnouncementService) GetAnnouncementByIDAdmin(ctx context.Context, id int64) (*model.Announcement, error) {
+	return s.announcementRepo.GetAnnouncementByID(ctx, id)
+}
