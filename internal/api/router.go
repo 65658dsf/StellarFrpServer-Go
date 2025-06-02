@@ -69,6 +69,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adService := service.NewAdService(adRepo, redisClient, logger)
 	announcementService := service.NewAnnouncementService(announcementRepo, redisClient, logger)
 	systemService := service.NewSystemService(systemRepo, redisClient, logger)
+	groupService := service.NewGroupService(groupRepo, logger)
 
 	// 初始化节点调度器
 	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
@@ -91,6 +92,8 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// 初始化管理员处理器
 	userAdminHandler := admin.NewUserAdminHandler(userService, logger)
 	announcementAdminHandler := admin.NewAnnouncementAdminHandler(announcementService, logger)
+	nodeAdminHandler := admin.NewNodeAdminHandler(nodeService, nodeRepo, logger)
+	groupAdminHandler := admin.NewGroupAdminHandler(groupService, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -115,7 +118,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adminRouter := v1.Group("/admin")
 	// 添加管理员认证中间件
 	adminRouter.Use(middleware.AdminAuth(userService))
-	admin.RegisterAdminRoutes(adminRouter, userAdminHandler, announcementAdminHandler)
+	admin.RegisterAdminRoutes(adminRouter, userAdminHandler, announcementAdminHandler, nodeAdminHandler, groupAdminHandler)
 
 	return router
 }

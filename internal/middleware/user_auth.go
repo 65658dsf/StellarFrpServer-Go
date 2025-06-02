@@ -42,9 +42,18 @@ func UserAuth(userService service.UserService) gin.HandlerFunc {
 			return
 		}
 
-		// 将用户ID和GroupID存储到上下文中，供后续处理使用
+		// 将用户ID存储到上下文中
 		c.Set("user_id", user.ID)
-		c.Set("group_id", user.GroupID)
+
+		// 处理用户组ID逻辑：
+		// 如果用户未实名认证(is_verified=0)且不是黑名单用户(group_id!=6)，则视为未实名用户组(group_id=1)
+		effectiveGroupID := user.GroupID
+		if user.IsVerified == 0 && user.GroupID != 6 {
+			effectiveGroupID = 1 // 未实名用户组ID为1
+		}
+
+		// 将实际使用的GroupID存储到上下文中，供后续处理使用
+		c.Set("group_id", effectiveGroupID)
 		c.Next()
 	}
 }

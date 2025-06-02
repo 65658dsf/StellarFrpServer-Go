@@ -52,6 +52,7 @@ type UserService interface {
 	IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error)
 	IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error)
 	SearchUsers(ctx context.Context, keyword string) ([]*repository.User, error)
+	GetAllGroups(ctx context.Context) ([]*repository.Group, error)
 }
 
 // userService 用户服务实现
@@ -414,7 +415,13 @@ func (s *userService) GetUserGroup(ctx context.Context, userID int64) (*reposito
 		return nil, errors.New("用户不存在")
 	}
 
-	return s.getCachedGroupByID(ctx, user.GroupID)
+	// 应用规则：如果用户未实名认证(is_verified=0)且不是黑名单用户(group_id!=6)，则视为未实名用户组(group_id=1)
+	effectiveGroupID := user.GroupID
+	if user.IsVerified == 0 && user.GroupID != 6 {
+		effectiveGroupID = 1 // 未实名用户组ID为1
+	}
+
+	return s.getCachedGroupByID(ctx, effectiveGroupID)
 }
 
 // ResetToken 重置用户token
@@ -554,4 +561,9 @@ func (s *userService) IsUserBlacklistedByToken(ctx context.Context, token string
 // SearchUsers 搜索用户
 func (s *userService) SearchUsers(ctx context.Context, keyword string) ([]*repository.User, error) {
 	return s.userRepo.SearchUsers(ctx, keyword)
+}
+
+// GetAllGroups 获取所有用户组
+func (s *userService) GetAllGroups(ctx context.Context) ([]*repository.Group, error) {
+	return s.groupRepo.List(ctx)
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"stellarfrp/internal/constants"
-	"strconv"
 	"strings"
 	"time"
 
@@ -357,8 +356,8 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 // verifyTransportParams 验证隧道的传输参数
 func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[string]interface{}, proxy *repository.Proxy, user *repository.User) bool {
 	// 获取传输参数
-	useEncryption, hasEncryption := content["use_encryption"].(bool)
-	useCompression, hasCompression := content["use_compression"].(bool)
+	_, hasEncryption := content["use_encryption"].(bool)
+	_, hasCompression := content["use_compression"].(bool)
 	bandwidthLimit, hasBandwidth := content["bandwidth_limit"].(string)
 	bandwidthLimitMode, hasBandwidthMode := content["bandwidth_limit_mode"].(string)
 
@@ -366,25 +365,57 @@ func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[str
 	if !hasEncryption || !hasCompression || !hasBandwidth || !hasBandwidthMode {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
-			RejectReason: "非法传参",
+			RejectReason: "部分必要的传输参数缺失",
 		})
 		return false
 	}
 
-	// 检查传输配置
-	if strconv.FormatBool(useEncryption) != proxy.UseEncryption {
+	// 检查传输配置 (useEncryption)
+	contentUseEncryption := content["use_encryption"].(bool)
+	dbUseEncryptionStr := strings.ToLower(strings.TrimSpace(proxy.UseEncryption))
+	var dbUseEncryptionBool bool
+	if dbUseEncryptionStr == "true" || dbUseEncryptionStr == "1" {
+		dbUseEncryptionBool = true
+	} else if dbUseEncryptionStr == "false" || dbUseEncryptionStr == "0" {
+		dbUseEncryptionBool = false
+	} else {
+		h.logger.Warn("数据库中 use_encryption 字段的值无效", "proxy_id", proxy.ID, "value", proxy.UseEncryption)
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
-			RejectReason: "非法传参",
+			RejectReason: "服务器端隧道加密配置无效",
 		})
 		return false
 	}
 
-	// 检查压缩配置
-	if strconv.FormatBool(useCompression) != proxy.UseCompression {
+	if contentUseEncryption != dbUseEncryptionBool {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
-			RejectReason: "非法传参",
+			RejectReason: "隧道加密设置与服务器配置不匹配",
+		})
+		return false
+	}
+
+	// 检查压缩配置 (useCompression)
+	contentUseCompression := content["use_compression"].(bool)
+	dbUseCompressionStr := strings.ToLower(strings.TrimSpace(proxy.UseCompression))
+	var dbUseCompressionBool bool
+	if dbUseCompressionStr == "true" || dbUseCompressionStr == "1" {
+		dbUseCompressionBool = true
+	} else if dbUseCompressionStr == "false" || dbUseCompressionStr == "0" {
+		dbUseCompressionBool = false
+	} else {
+		h.logger.Warn("数据库中 use_compression 字段的值无效", "proxy_id", proxy.ID, "value", proxy.UseCompression)
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "服务器端隧道压缩配置无效",
+		})
+		return false
+	}
+
+	if contentUseCompression != dbUseCompressionBool {
+		c.JSON(http.StatusOK, FrpPluginResponse{
+			Reject:       true,
+			RejectReason: "隧道压缩设置与服务器配置不匹配",
 		})
 		return false
 	}

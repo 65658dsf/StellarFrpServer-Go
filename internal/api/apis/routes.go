@@ -22,6 +22,7 @@ func RegisterPublicRoutes(
 		users.POST("/sendcode", userHandler.SendMessage)
 		users.POST("/login", userHandler.Login)
 		users.POST("/resetpwd", userHandler.ResetPassword)
+		users.GET("/groups", userHandler.GetGroupList)
 	}
 
 	// 系统公告相关路由

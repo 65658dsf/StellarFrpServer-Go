@@ -306,15 +306,12 @@ func (s *proxyService) CheckUserNodeAccess(ctx context.Context, username string,
 		return false, errors.New("用户不存在")
 	}
 
-	// 获取用户组信息
-	group, err := s.userService.GetUserGroup(ctx, user.ID)
-	if err != nil {
-		return false, err
-	}
-	if group == nil {
-		return false, errors.New("用户组不存在")
+	// 确定实际使用的用户组ID
+	effectiveGroupID := user.GroupID
+	if user.IsVerified == 0 && user.GroupID != 6 {
+		effectiveGroupID = 1 // 未实名用户组ID为1
 	}
 
 	// 使用工具函数检查用户组ID是否在节点的权限组列表中
-	return utils.IsGroupInPermission(group.ID, node.Permission)
+	return utils.IsGroupInPermission(effectiveGroupID, node.Permission)
 }

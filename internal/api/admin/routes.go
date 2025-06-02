@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterAdminRoutes 注册管理员API路由
-func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler) {
+func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler, nodeAdminHandler *NodeAdminHandler, groupAdminHandler *GroupAdminHandler) {
 	// 用户管理路由
 	users := router.Group("/users")
 	{
@@ -29,5 +29,29 @@ func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHan
 		announcements.GET("/:id", announcementAdminHandler.GetAdminAnnouncementByID)
 		announcements.POST("/update", announcementAdminHandler.UpdateAnnouncement)
 		announcements.POST("/delete", announcementAdminHandler.DeleteAnnouncement)
+	}
+
+	// 节点管理路由
+	nodes := router.Group("/nodes")
+	nodes.Use(middleware.AdminAuth(userAdminHandler.userService))
+	{
+		nodes.GET("", nodeAdminHandler.ListNodes)
+		nodes.GET("/:id", nodeAdminHandler.GetNode)
+		nodes.POST("/create", nodeAdminHandler.CreateNode)
+		nodes.POST("/update", nodeAdminHandler.UpdateNode)
+		nodes.POST("/delete", nodeAdminHandler.DeleteNode)
+		nodes.GET("/search", nodeAdminHandler.SearchNodes)
+	}
+
+	// 用户组管理路由
+	groups := router.Group("/groups")
+	groups.Use(middleware.AdminAuth(userAdminHandler.userService))
+	{
+		groups.GET("", groupAdminHandler.ListGroups)
+		groups.GET("/:id", groupAdminHandler.GetGroup)
+		groups.POST("/create", groupAdminHandler.CreateGroup)
+		groups.POST("/update", groupAdminHandler.UpdateGroup)
+		groups.POST("/delete", groupAdminHandler.DeleteGroup)
+		groups.GET("/search", groupAdminHandler.SearchGroups)
 	}
 }

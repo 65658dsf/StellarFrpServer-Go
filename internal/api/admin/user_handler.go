@@ -137,14 +137,20 @@ func (h *UserAdminHandler) GetUser(c *gin.Context) {
 	user.Password = ""
 	user.Token = ""
 
+	// 确定实际使用的用户组ID
+	effectiveGroupID := user.GroupID
+	if user.IsVerified == 0 && user.GroupID != 6 {
+		effectiveGroupID = 1 // 未实名用户组ID为1
+	}
+
 	// 获取用户组名称
-	groupName, err := h.userService.GetGroupName(context.Background(), user.GroupID)
+	groupName, err := h.userService.GetGroupName(context.Background(), effectiveGroupID)
 	if err != nil {
 		groupName = "未知用户组"
 	}
 
 	// 获取用户组的隧道数量限制
-	tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), user.GroupID)
+	tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), effectiveGroupID)
 	if err != nil {
 		h.logger.Error("获取用户组隧道限制失败", "error", err, "user_id", user.ID)
 		tunnelLimit = 0
@@ -160,6 +166,7 @@ func (h *UserAdminHandler) GetUser(c *gin.Context) {
 	totalTunnelLimit := tunnelLimit + additionalTunnels
 
 	// 获取用户组带宽限制
+	// 使用用户ID获取用户组，GetUserGroup内部会处理effectiveGroupID的逻辑
 	userGroup, err := h.userService.GetUserGroup(context.Background(), user.ID)
 	if err != nil {
 		h.logger.Error("获取用户组信息失败", "error", err, "user_id", user.ID)
@@ -182,11 +189,13 @@ func (h *UserAdminHandler) GetUser(c *gin.Context) {
 		GroupName        string `json:"GroupName"`
 		TotalTunnelLimit int    `json:"GroupTunnel"`
 		TotalBandwidth   int    `json:"GroupBandwidth"`
+		EffectiveGroupID int64  `json:"EffectiveGroupID"`
 	}{
 		User:             user,
 		GroupName:        groupName,
 		TotalTunnelLimit: totalTunnelLimit,
 		TotalBandwidth:   totalBandwidth,
+		EffectiveGroupID: effectiveGroupID,
 	}
 
 	c.JSON(http.StatusOK, gin.H{

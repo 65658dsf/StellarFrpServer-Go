@@ -303,15 +303,21 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		return
 	}
 
+	// 确定实际使用的用户组ID
+	effectiveGroupID := user.GroupID
+	if user.IsVerified == 0 && user.GroupID != 6 {
+		effectiveGroupID = 1 // 未实名用户组ID为1
+	}
+
 	// 获取用户组名称
-	groupName, err := h.userService.GetGroupName(context.Background(), user.GroupID)
+	groupName, err := h.userService.GetGroupName(context.Background(), effectiveGroupID)
 	if err != nil {
 		groupName = "未知用户组"
 		h.logger.Error("Failed to get group name", "error", err)
 	}
 
 	// 获取用户组流量
-	groupTraffic, err := h.userService.GetGroupTraffic(context.Background(), user.GroupID)
+	groupTraffic, err := h.userService.GetGroupTraffic(context.Background(), effectiveGroupID)
 	if err != nil {
 		h.logger.Error("Failed to get group traffic", "error", err)
 		groupTraffic = 0
@@ -341,7 +347,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 
 	// 获取用户组的隧道数量限制
-	tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), user.GroupID)
+	tunnelLimit, err := h.userService.GetGroupTunnelLimit(context.Background(), effectiveGroupID)
 	if err != nil {
 		h.logger.Error("Failed to get group tunnel limit", "error", err)
 		tunnelLimit = 0
@@ -506,5 +512,22 @@ func (h *UserHandler) ResetToken(c *gin.Context) {
 		"data": gin.H{
 			"token": user.Token,
 		},
+	})
+}
+
+// GetGroupList 获取权限组列表
+func (h *UserHandler) GetGroupList(c *gin.Context) {
+	// 获取所有用户组
+	groups, err := h.userService.GetAllGroups(context.Background())
+	if err != nil {
+		h.logger.Error("获取用户组列表失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取用户组列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "获取成功",
+		"data": groups,
 	})
 }
