@@ -355,28 +355,25 @@ func (h *ProxyAuthHandler) handleNewProxyAuth(c *gin.Context, req FrpPluginReque
 
 // verifyTransportParams 验证隧道的传输参数
 func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[string]interface{}, proxy *repository.Proxy, user *repository.User) bool {
-	// 获取传输参数
-	_, hasEncryption := content["use_encryption"].(bool)
-	_, hasCompression := content["use_compression"].(bool)
+	// 检查带宽限制参数
 	bandwidthLimit, hasBandwidth := content["bandwidth_limit"].(string)
 	bandwidthLimitMode, hasBandwidthMode := content["bandwidth_limit_mode"].(string)
 
-	// 检查参数是否存在
-	if !hasEncryption || !hasCompression || !hasBandwidth || !hasBandwidthMode {
+	// 检查带宽限制参数是否存在
+	if !hasBandwidth || !hasBandwidthMode {
 		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
-			RejectReason: "部分必要的传输参数缺失",
+			RejectReason: "带宽限制参数缺失",
 		})
 		return false
 	}
 
-	// 检查传输配置 (useEncryption)
-	contentUseEncryption := content["use_encryption"].(bool)
+	// 解析数据库中的加密设置
 	dbUseEncryptionStr := strings.ToLower(strings.TrimSpace(proxy.UseEncryption))
 	var dbUseEncryptionBool bool
 	if dbUseEncryptionStr == "true" || dbUseEncryptionStr == "1" {
 		dbUseEncryptionBool = true
-	} else if dbUseEncryptionStr == "false" || dbUseEncryptionStr == "0" {
+	} else if dbUseEncryptionStr == "false" || dbUseEncryptionStr == "0" || dbUseEncryptionStr == "" {
 		dbUseEncryptionBool = false
 	} else {
 		h.logger.Warn("数据库中 use_encryption 字段的值无效", "proxy_id", proxy.ID, "value", proxy.UseEncryption)
@@ -387,21 +384,12 @@ func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[str
 		return false
 	}
 
-	if contentUseEncryption != dbUseEncryptionBool {
-		c.JSON(http.StatusOK, FrpPluginResponse{
-			Reject:       true,
-			RejectReason: "隧道加密设置与服务器配置不匹配",
-		})
-		return false
-	}
-
-	// 检查压缩配置 (useCompression)
-	contentUseCompression := content["use_compression"].(bool)
+	// 解析数据库中的压缩设置
 	dbUseCompressionStr := strings.ToLower(strings.TrimSpace(proxy.UseCompression))
 	var dbUseCompressionBool bool
 	if dbUseCompressionStr == "true" || dbUseCompressionStr == "1" {
 		dbUseCompressionBool = true
-	} else if dbUseCompressionStr == "false" || dbUseCompressionStr == "0" {
+	} else if dbUseCompressionStr == "false" || dbUseCompressionStr == "0" || dbUseCompressionStr == "" {
 		dbUseCompressionBool = false
 	} else {
 		h.logger.Warn("数据库中 use_compression 字段的值无效", "proxy_id", proxy.ID, "value", proxy.UseCompression)
@@ -412,12 +400,64 @@ func (h *ProxyAuthHandler) verifyTransportParams(c *gin.Context, content map[str
 		return false
 	}
 
-	if contentUseCompression != dbUseCompressionBool {
-		c.JSON(http.StatusOK, FrpPluginResponse{
-			Reject:       true,
-			RejectReason: "隧道压缩设置与服务器配置不匹配",
-		})
-		return false
+	// 检查加密配置
+	if dbUseEncryptionBool {
+		// 只有当数据库中需要加密时，才检查客户端参数
+		encryptionVal, hasEncryption := content["use_encryption"]
+		contentUseEncryption := false
+
+		if !hasEncryption {
+			c.JSON(http.StatusOK, FrpPluginResponse{
+				Reject:       true,
+				RejectReason: "隧道加密参数缺失，服务器要求使用加密",
+			})
+			return false
+		}
+
+		// 尝试将值转换为布尔类型
+		if boolVal, ok := encryptionVal.(bool); ok {
+			contentUseEncryption = boolVal
+		} else if strVal, ok := encryptionVal.(string); ok {
+			contentUseEncryption = strings.ToLower(strVal) == "true"
+		}
+
+		if !contentUseEncryption {
+			c.JSON(http.StatusOK, FrpPluginResponse{
+				Reject:       true,
+				RejectReason: "服务器要求使用加密，但客户端未启用加密",
+			})
+			return false
+		}
+	}
+
+	// 检查压缩配置
+	if dbUseCompressionBool {
+		// 只有当数据库中需要压缩时，才检查客户端参数
+		compressionVal, hasCompression := content["use_compression"]
+		contentUseCompression := false
+
+		if !hasCompression {
+			c.JSON(http.StatusOK, FrpPluginResponse{
+				Reject:       true,
+				RejectReason: "隧道压缩参数缺失，服务器要求使用压缩",
+			})
+			return false
+		}
+
+		// 尝试将值转换为布尔类型
+		if boolVal, ok := compressionVal.(bool); ok {
+			contentUseCompression = boolVal
+		} else if strVal, ok := compressionVal.(string); ok {
+			contentUseCompression = strings.ToLower(strVal) == "true"
+		}
+
+		if !contentUseCompression {
+			c.JSON(http.StatusOK, FrpPluginResponse{
+				Reject:       true,
+				RejectReason: "服务器要求使用压缩，但客户端未启用压缩",
+			})
+			return false
+		}
 	}
 
 	// 获取用户带宽限制
