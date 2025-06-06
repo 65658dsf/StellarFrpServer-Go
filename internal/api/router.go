@@ -48,6 +48,8 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adRepo := repository.NewAdRepository(db)
 	announcementRepo := repository.NewAnnouncementRepository(db)
 	systemRepo := repository.NewSystemRepository(db)
+	productRepo := repository.NewProductRepository(db)
+	orderRepo := repository.NewOrderRepository(db)
 
 	// 初始化邮件服务
 	emailService := email.NewService(email.Config{
@@ -70,6 +72,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	announcementService := service.NewAnnouncementService(announcementRepo, redisClient, logger)
 	systemService := service.NewSystemService(systemRepo, redisClient, logger)
 	groupService := service.NewGroupService(groupRepo, logger)
+	productService := service.NewProductService(productRepo, orderRepo, userService, redisClient, logger)
 
 	// 初始化节点调度器
 	nodeScheduler := scheduler.NewNodeScheduler(nodeTrafficService, logger)
@@ -88,6 +91,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adHandler := handler.NewAdHandler(adService, logger)
 	announcementHandler := handler.NewAnnouncementHandler(announcementService, logger)
 	systemHandler := handler.NewSystemHandler(systemService, logger)
+	productHandler := handler.NewProductHandler(productService, logger)
 
 	// 初始化管理员处理器
 	userAdminHandler := admin.NewUserAdminHandler(userService, logger)
@@ -109,10 +113,10 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	authRouter.Use(middleware.UserAuth(userService))
 
 	// 注册不需要认证的路由（如登录、注册、发送验证码等）
-	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
+	apis.RegisterPublicRoutes(v1, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler, productHandler)
 
 	// 注册需要认证的API路由
-	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler)
+	apis.RegisterAuthRoutes(authRouter, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler, productHandler)
 
 	// 注册管理员API路由
 	adminRouter := v1.Group("/admin")

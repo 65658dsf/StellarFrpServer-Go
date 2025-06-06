@@ -297,3 +297,34 @@ func (r *userRepository) GetExpiredUsersByGroupID(ctx context.Context, groupID i
 	}
 	return users, nil
 }
+
+// GetUserByID 根据ID获取用户
+func (r *userRepository) GetUserByID(id uint64) (*User, error) {
+	var user User
+	query := `SELECT * FROM users WHERE id = ?`
+	err := r.db.Get(&user, query, id)
+	return &user, err
+}
+
+// UpdateUser 更新用户信息
+func (r *userRepository) UpdateUser(user *User) error {
+	query := `
+		UPDATE users SET 
+		username = ?, email = ?, password = ?, 
+		verify_count = ?, status = ?,
+		traffic_quota = ?,
+		updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`
+	_, err := r.db.Exec(
+		query,
+		user.Username,
+		user.Email,
+		user.Password,
+		user.VerifyCount,
+		user.Status,
+		user.TrafficQuota,
+		user.ID,
+	)
+	return err
+}

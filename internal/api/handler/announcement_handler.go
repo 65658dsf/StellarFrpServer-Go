@@ -51,7 +51,7 @@ func (h *AnnouncementHandler) GetAnnouncements(c *gin.Context) {
 	paginatedAnnouncements, err := h.announcementService.GetAnnouncements(ctx, page, limit)
 	if err != nil {
 		h.logger.Error("获取公告列表失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code": 500,
 			"msg":  "获取公告列表失败",
 		})

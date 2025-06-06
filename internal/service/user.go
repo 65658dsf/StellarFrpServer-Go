@@ -22,38 +22,7 @@ import (
 
 // const allUsersCacheKey = "users:all" // 不再使用
 
-// UserService 用户服务接口
-type UserService interface {
-	Create(ctx context.Context, user *repository.User) error
-	CreateAsync(ctx context.Context, user *repository.User) (string, error)
-	GetByID(ctx context.Context, id int64) (*repository.User, error)
-	GetByUsername(ctx context.Context, username string) (*repository.User, error)
-	GetByEmail(ctx context.Context, email string) (*repository.User, error)
-	GetByToken(ctx context.Context, token string) (*repository.User, error)
-	Update(ctx context.Context, user *repository.User) error
-	Delete(ctx context.Context, id int64) error
-	List(ctx context.Context, page, pageSize int) ([]*repository.User, error)
-	GetAllUsers(ctx context.Context) ([]*repository.User, error)
-	GetUsersWithExpiredGroup(ctx context.Context, groupID int64) ([]*repository.User, error)
-	Count(ctx context.Context) (int64, error)
-	GetTaskStatus(ctx context.Context, taskID string) (string, error)
-	SendEmail(ctx context.Context, email, msgType string) error
-	Login(ctx context.Context, identifier, password string) (*repository.User, error)
-	GetGroupName(ctx context.Context, groupID int64) (string, error)
-	GetGroupTunnelLimit(ctx context.Context, groupID int64) (int, error)
-	GetUserBandwidth(ctx context.Context, userID int64) (int, error)
-	GetUserTrafficQuota(ctx context.Context, userID int64) (int64, error)
-	GetUserGroup(ctx context.Context, userID int64) (*repository.Group, error)
-	ResetToken(ctx context.Context, identifier, password string) (*repository.User, error)
-	AdminResetToken(ctx context.Context, user *repository.User) error
-	GetGroupTraffic(ctx context.Context, groupID int64) (int64, error)
-	GetUserUsedTraffic(ctx context.Context, userID int64) (int64, error)
-	IsUserBlacklisted(ctx context.Context, userID int64) (bool, error)
-	IsUserBlacklistedByUsername(ctx context.Context, username string) (bool, error)
-	IsUserBlacklistedByToken(ctx context.Context, token string) (bool, error)
-	SearchUsers(ctx context.Context, keyword string) ([]*repository.User, error)
-	GetAllGroups(ctx context.Context) ([]*repository.Group, error)
-}
+// UserService interface has been moved to user_interface.go
 
 // userService 用户服务实现
 type userService struct {
@@ -566,4 +535,99 @@ func (s *userService) SearchUsers(ctx context.Context, keyword string) ([]*repos
 // GetAllGroups 获取所有用户组
 func (s *userService) GetAllGroups(ctx context.Context) ([]*repository.Group, error) {
 	return s.groupRepo.List(ctx)
+}
+
+// AddVerifyCount 增加用户的实名认证次数
+func (s *userService) AddVerifyCount(userID uint64, count int) error {
+	// 获取用户信息
+	user, err := s.userRepo.GetByID(context.Background(), int64(userID))
+	if err != nil {
+		return fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	// 更新实名认证次数
+	user.VerifyCount += count
+
+	// 保存到数据库
+	err = s.userRepo.Update(context.Background(), user)
+	if err != nil {
+		return fmt.Errorf("更新用户实名认证次数失败: %w", err)
+	}
+
+	return nil
+}
+
+// AddTraffic 增加用户的流量（单位：GB）
+func (s *userService) AddTraffic(userID uint64, trafficGB float64) error {
+	// 获取用户信息
+	user, err := s.userRepo.GetByID(context.Background(), int64(userID))
+	if err != nil {
+		return fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	// 将GB转换为字节
+	trafficBytes := trafficGB * 1024 * 1024 * 1024
+
+	// 如果TrafficQuota为nil，初始化为0
+	if user.TrafficQuota == nil {
+		quota := int64(trafficBytes)
+		user.TrafficQuota = &quota
+	} else {
+		// 更新用户流量
+		*user.TrafficQuota += int64(trafficBytes)
+	}
+
+	// 保存到数据库
+	err = s.userRepo.Update(context.Background(), user)
+	if err != nil {
+		return fmt.Errorf("更新用户流量失败: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateUserGroup 更新用户组
+func (s *userService) UpdateUserGroup(ctx context.Context, userID int64, groupID int64) error {
+	// 获取用户信息
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("获取用户信息失败: %w", err)
+	}
+
+	// 检查用户组是否存在
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return fmt.Errorf("获取用户组信息失败: %w", err)
+	}
+	if group == nil {
+		return fmt.Errorf("用户组不存在: %d", groupID)
+	}
+
+	// 更新用户组
+	user.GroupID = groupID
+
+	// 处理会员有效期
+	now := time.Now()
+
+	// 如果用户已经有会员时间，并且尚未过期，则在现有时间基础上增加一个月
+	if user.GroupTime != nil && user.GroupTime.After(now) {
+		// 会员未过期，在现有时间基础上增加一个月
+		expireTime := user.GroupTime.AddDate(0, 1, 0)
+		user.GroupTime = &expireTime
+		s.logger.Info("会员续期", "user_id", userID, "old_expire", user.GroupTime, "new_expire", expireTime)
+	} else {
+		// 会员已过期或没有会员，从当前时间开始计算一个月
+		expireTime := now.AddDate(0, 1, 0)
+		user.GroupTime = &expireTime
+		s.logger.Info("会员新开通", "user_id", userID, "expire", expireTime)
+	}
+
+	// 保存到数据库
+	err = s.userRepo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("更新用户组失败: %w", err)
+	}
+
+	s.logger.Info("用户组升级成功", "user_id", userID, "group_id", groupID, "group_name", group.Name, "expire_time", user.GroupTime)
+	return nil
 }

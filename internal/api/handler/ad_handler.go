@@ -35,7 +35,7 @@ func (h *AdHandler) GetAds(c *gin.Context) {
 	ads, err := h.adService.GetActiveAds(ctx)
 	if err != nil {
 		h.logger.Error("获取广告列表失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code": 500,
 			"msg":  "获取广告列表失败",
 		})

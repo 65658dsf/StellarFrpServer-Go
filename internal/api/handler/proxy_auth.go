@@ -54,7 +54,7 @@ func (h *ProxyAuthHandler) HandleProxyAuth(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("解析请求失败", "error", err)
-		c.JSON(http.StatusBadRequest, FrpPluginResponse{
+		c.JSON(http.StatusOK, FrpPluginResponse{
 			Reject:       true,
 			RejectReason: constants.ErrInvalidRequest,
 		})

@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `orders` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `order_no` varchar(64) NOT NULL COMMENT '订单号',
+  `user_id` bigint(20) unsigned NOT NULL COMMENT '用户ID',
+  `product_id` bigint(20) unsigned NOT NULL COMMENT '商品ID',
+  `product_sku_id` varchar(255) NOT NULL COMMENT '商品SKU ID',
+  `product_name` varchar(255) NOT NULL COMMENT '商品名称',
+  `amount` decimal(10, 2) NOT NULL COMMENT '订单金额',
+  `status` tinyint(1) NOT NULL DEFAULT '0' COMMENT '订单状态：0待支付，1已支付，2已取消，3已退款',
+  `remark` varchar(255) DEFAULT NULL COMMENT '订单备注',
+  `afdian_trade_no` varchar(64) DEFAULT NULL COMMENT '爱发电交易号',
+  `reward_action` varchar(64) DEFAULT NULL COMMENT '奖励动作',
+  `reward_value` varchar(64) DEFAULT NULL COMMENT '奖励值',
+  `reward_executed` tinyint(1) NOT NULL DEFAULT '0' COMMENT '奖励是否已执行',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `paid_at` timestamp NULL DEFAULT NULL COMMENT '支付时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `order_no` (`order_no`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_afdian_trade_no` (`afdian_trade_no`),
+  KEY `idx_remark` (`remark`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表'; 

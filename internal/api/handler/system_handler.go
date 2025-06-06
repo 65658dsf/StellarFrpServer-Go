@@ -34,7 +34,7 @@ func (h *SystemHandler) GetSystemStatus(c *gin.Context) {
 	status, err := h.systemService.GetSystemStatus(c.Request.Context())
 	if err != nil {
 		h.logger.Error("获取系统状态失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code": 500,
 			"msg":  "获取系统状态失败",
 		})

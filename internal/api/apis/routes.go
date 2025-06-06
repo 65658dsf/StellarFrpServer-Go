@@ -14,6 +14,7 @@ func RegisterPublicRoutes(
 	announcementHandler *handler.AnnouncementHandler,
 	adHandler *handler.AdHandler,
 	proxyAuthHandler *handler.ProxyAuthHandler,
+	productHandler *handler.ProductHandler,
 ) {
 	// 用户登录注册相关路由
 	users := router.Group("/users")
@@ -36,6 +37,9 @@ func RegisterPublicRoutes(
 
 	// 隧道鉴权路由（不需要认证）
 	router.POST("/proxy/auth", proxyAuthHandler.HandleProxyAuth)
+
+	// 商品相关公开路由
+	RegisterShopPublicRoutes(router, productHandler)
 }
 
 // RegisterAuthRoutes 注册需要认证的API路由
@@ -47,6 +51,7 @@ func RegisterAuthRoutes(
 	proxyHandler *handler.ProxyHandler,
 	proxyAuthHandler *handler.ProxyAuthHandler,
 	realNameAuthHandler *handler.RealNameAuthHandler,
+	productHandler *handler.ProductHandler,
 ) {
 	// 用户信息、签到、实名认证等路由 (需要认证)
 	usersGroup := router.Group("/users")                                                 // 创建 /users 子分组
@@ -65,6 +70,9 @@ func RegisterAuthRoutes(
 
 	// 注册隧道相关路由
 	RegisterProxyRoutes(router, proxyHandler, proxyAuthHandler) // router 是 /api/v1 (认证过的)
+
+	// 注册商品相关路由（需要认证）
+	RegisterShopRoutes(router, productHandler)
 }
 
 // 保留原有的RegisterRoutes函数以保持兼容性
@@ -79,12 +87,13 @@ func RegisterRoutes(
 	announcementHandler *handler.AnnouncementHandler,
 	systemHandler *handler.SystemHandler,
 	realNameAuthHandler *handler.RealNameAuthHandler,
+	productHandler *handler.ProductHandler,
 ) {
 	// 注册公共路由
-	RegisterPublicRoutes(router, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler)
+	RegisterPublicRoutes(router, userHandler, systemHandler, announcementHandler, adHandler, proxyAuthHandler, productHandler)
 
 	// 注册需要认证的路由
-	RegisterAuthRoutes(router, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler)
+	RegisterAuthRoutes(router, userHandler, userCheckinHandler, nodeHandler, proxyHandler, proxyAuthHandler, realNameAuthHandler, productHandler)
 }
 
 // RegisterAdRoutes 注册广告相关路由
