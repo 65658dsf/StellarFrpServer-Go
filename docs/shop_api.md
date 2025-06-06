@@ -30,6 +30,7 @@
 | 创建订单链接 | POST | /api/v1/shop/order/create | 是 | 创建爱发电订单链接 |
 | 获取用户订单列表 | GET | /api/v1/shop/orders | 是 | 获取当前用户的所有订单 |
 | 查询订单状态 | GET | /api/v1/shop/order/status | 是 | 查询指定订单的状态 |
+| 删除订单 | POST | /api/v1/shop/order/delete | 是 | 删除未支付的订单 |
 | 爱发电Webhook回调 | POST | /api/v1/afdian/webhook | 否 | 接收爱发电的支付通知 |
 
 ## 公共接口
@@ -223,6 +224,57 @@ GET /api/v1/shop/order/status?order_no={order_no}
 | 1 | 已支付 |
 | 2 | 已取消 |
 | 3 | 已退款 |
+
+### 删除订单
+
+删除未支付的订单。只能删除状态为待支付(0)的订单，已支付、已取消或已退款的订单无法删除。
+
+**请求**
+
+```
+POST /api/v1/shop/order/delete
+Content-Type: application/json
+```
+
+**请求体**
+
+```json
+{
+  "order_no": "SFP20230101000000xxxxxxxx"
+}
+```
+
+**响应**
+
+```json
+{
+  "code": 200,
+  "message": "删除订单成功"
+}
+```
+
+**错误响应**
+
+```json
+{
+  "code": 400,
+  "message": "只能删除未支付的订单"
+}
+```
+
+```json
+{
+  "code": 403,
+  "message": "无权删除此订单"
+}
+```
+
+```json
+{
+  "code": 404,
+  "message": "订单不存在"
+}
+```
 
 ## 爱发电集成
 

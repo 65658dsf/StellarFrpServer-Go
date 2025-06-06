@@ -326,3 +326,101 @@ func (h *ProductHandler) GetOrderStatus(c *gin.Context) {
 		},
 	})
 }
+
+// DeleteUserOrder 用户删除自己的未支付订单
+func (h *ProductHandler) DeleteUserOrder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    401,
+			"message": "用户未认证",
+		})
+		return
+	}
+
+	// 解析JSON请求体
+	var requestBody struct {
+		OrderNo string `json:"order_no" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "无效的请求参数",
+		})
+		return
+	}
+
+	// 将userID转换为uint64
+	var userIDUint uint64
+	switch v := userID.(type) {
+	case int64:
+		userIDUint = uint64(v)
+	case uint64:
+		userIDUint = v
+	case float64:
+		userIDUint = uint64(v)
+	case int:
+		userIDUint = uint64(v)
+	default:
+		h.logger.Error("无效的用户ID类型", "type", fmt.Sprintf("%T", userID), "value", userID)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": "服务器内部错误",
+		})
+		return
+	}
+
+	// 获取订单信息
+	order, err := h.productService.GetOrderByOrderNo(requestBody.OrderNo)
+	if err != nil {
+		h.logger.Error("获取订单信息失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": "获取订单信息失败",
+		})
+		return
+	}
+
+	// 检查订单是否存在
+	if order == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    404,
+			"message": "订单不存在",
+		})
+		return
+	}
+
+	// 验证订单所属用户
+	if order.UserID != userIDUint {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    403,
+			"message": "无权删除此订单",
+		})
+		return
+	}
+
+	// 检查订单状态，只允许删除未支付的订单
+	if order.Status != 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "只能删除未支付的订单",
+		})
+		return
+	}
+
+	// 删除订单
+	if err := h.productService.DeleteOrder(requestBody.OrderNo); err != nil {
+		h.logger.Error("删除订单失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": "删除订单失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "删除订单成功",
+	})
+}

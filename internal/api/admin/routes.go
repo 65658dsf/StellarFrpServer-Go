@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterAdminRoutes 注册管理员API路由
-func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler, nodeAdminHandler *NodeAdminHandler, groupAdminHandler *GroupAdminHandler) {
+func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler, nodeAdminHandler *NodeAdminHandler, groupAdminHandler *GroupAdminHandler, productAdminHandler *ProductAdminHandler) {
 	// 用户管理路由
 	users := router.Group("/users")
 	{
@@ -51,7 +51,28 @@ func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHan
 		groups.GET("/:id", groupAdminHandler.GetGroup)
 		groups.POST("/create", groupAdminHandler.CreateGroup)
 		groups.POST("/update", groupAdminHandler.UpdateGroup)
-		groups.POST("/delete", groupAdminHandler.DeleteGroup)
+		groups.DELETE("/:id", groupAdminHandler.DeleteGroup)
 		groups.GET("/search", groupAdminHandler.SearchGroups)
+	}
+
+	// 商品管理路由
+	products := router.Group("/products")
+	products.Use(middleware.AdminAuth(userAdminHandler.userService))
+	{
+		products.GET("", productAdminHandler.ListProducts)
+		products.GET("/:id", productAdminHandler.GetProduct)
+		products.POST("/create", productAdminHandler.CreateProduct)
+		products.POST("/update", productAdminHandler.UpdateProduct)
+		products.POST("/delete", productAdminHandler.DeleteProduct)
+	}
+
+	// 订单管理路由
+	orders := router.Group("/orders")
+	orders.Use(middleware.AdminAuth(userAdminHandler.userService))
+	{
+		orders.GET("", productAdminHandler.ListOrders)
+		orders.GET("/:order_no", productAdminHandler.GetOrder)
+		orders.POST("/update", productAdminHandler.UpdateOrderStatus)
+		orders.POST("/delete", productAdminHandler.DeleteOrder)
 	}
 }

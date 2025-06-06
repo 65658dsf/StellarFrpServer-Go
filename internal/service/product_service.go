@@ -329,3 +329,64 @@ func (s *ProductService) ProcessUnexecutedRewards() error {
 
 	return nil
 }
+
+// CreateProduct 创建商品
+func (s *ProductService) CreateProduct(product *model.Product) error {
+	return s.productRepo.CreateProduct(product)
+}
+
+// UpdateProduct 更新商品
+func (s *ProductService) UpdateProduct(product *model.Product) error {
+	return s.productRepo.UpdateProduct(product)
+}
+
+// DeleteProduct 删除商品
+func (s *ProductService) DeleteProduct(id uint64) error {
+	return s.productRepo.DeleteProduct(id)
+}
+
+// GetOrdersWithFilter 获取带过滤条件的订单列表
+func (s *ProductService) GetOrdersWithFilter(page, pageSize int, userID *uint64, status *int, orderNo string) ([]model.Order, int, error) {
+	return s.orderRepo.GetOrdersWithFilter(page, pageSize, userID, status, orderNo)
+}
+
+// UpdateOrderStatus 更新订单状态
+func (s *ProductService) UpdateOrderStatus(orderNo string, status int, afdianTradeNo string) error {
+	return s.orderRepo.UpdateOrderStatus(orderNo, status, afdianTradeNo)
+}
+
+// UpdateOrderPaidTime 更新订单支付时间
+func (s *ProductService) UpdateOrderPaidTime(orderNo string, paidTime time.Time) error {
+	return s.orderRepo.UpdateOrderPaidTime(orderNo, paidTime)
+}
+
+// ExecuteOrderReward 执行订单奖励
+func (s *ProductService) ExecuteOrderReward(orderNo string) error {
+	order, err := s.orderRepo.GetOrderByOrderNo(orderNo)
+	if err != nil {
+		return fmt.Errorf("获取订单信息失败: %w", err)
+	}
+
+	return s.executeReward(order)
+}
+
+// DeleteOrder 删除订单
+func (s *ProductService) DeleteOrder(orderNo string) error {
+	return s.orderRepo.DeleteOrder(orderNo)
+}
+
+// GetProductsWithPagination 获取分页商品列表
+func (s *ProductService) GetProductsWithPagination(page, pageSize int) ([]model.Product, int, error) {
+	// 设置默认值
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 50 {
+		pageSize = 50 // 限制最大为50条
+	}
+
+	return s.productRepo.GetProductsWithPagination(page, pageSize)
+}

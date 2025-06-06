@@ -14,6 +14,7 @@ func RegisterShopRoutes(router *gin.RouterGroup, productHandler *handler.Product
 		shop.GET("/orders", productHandler.GetUserOrders)
 		shop.GET("/order/status", productHandler.GetOrderStatus)
 		shop.POST("/order/create", productHandler.CreateOrderLink)
+		shop.POST("/order/delete", productHandler.DeleteUserOrder)
 	}
 }
 
