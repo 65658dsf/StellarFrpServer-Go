@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,6 +60,11 @@ func (h *NodeHandler) GetAccessibleNodes(c *gin.Context) {
 	// 构建返回数据 - 使用对象格式，节点ID作为键
 	nodeMap := make(map[string]gin.H)
 	for _, node := range nodes {
+		// 跳过状态为2（待审核）的节点
+		if node.Status == 2 {
+			continue
+		}
+
 		// 解析AllowedTypes字段，它是JSON格式的字符串
 		var allowedTypes []string
 		if err := json.Unmarshal([]byte(node.AllowedTypes), &allowedTypes); err != nil {
@@ -160,6 +166,11 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 	results := make(map[string]gin.H)
 
 	for _, node := range nodes {
+		// 跳过状态为2（待审核）的节点
+		if node.Status == 2 {
+			continue
+		}
+
 		wg.Add(1)
 		go func(node *repository.Node) {
 			defer wg.Done()
@@ -268,5 +279,242 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 		"code": 200,
 		"msg":  "获取成功",
 		"data": results,
+	})
+}
+
+// DonateNodeRequest 捐赠节点请求参数
+type DonateNodeRequest struct {
+	NodeName     string   `json:"node_name" binding:"required"`
+	Description  string   `json:"description" binding:"required"`
+	Bandwidth    string   `json:"bandwidth" binding:"required"` // 节点带宽
+	IP           string   `json:"ip" binding:"required"`
+	FrpsPort     int      `json:"server_port" binding:"required"` // 服务端口
+	URL          string   `json:"panel_url" binding:"required"`   // 面板地址
+	PortRange    string   `json:"port_range" binding:"required"`
+	AllowedTypes []string `json:"allowed_types" binding:"required"` // 允许类型
+	Permission   []string `json:"permission" binding:"required"`    // 允许访问的权限组
+	Token        string   `json:"token" binding:"required"`         // frps的Token
+	User         string   `json:"user" binding:"required"`          // frps的用户名
+}
+
+// DonateNode 捐赠节点
+func (h *NodeHandler) DonateNode(c *gin.Context) {
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
+		return
+	}
+
+	// 解析请求
+	var req DonateNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Error("捐赠节点参数绑定失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	// 将节点名称与带宽结合
+	combinedNodeName := fmt.Sprintf("%s-%s", req.NodeName, req.Bandwidth)
+
+	// 检查节点名是否已存在
+	existingNode, err := h.nodeService.GetByNodeName(context.Background(), combinedNodeName)
+	if err == nil && existingNode != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "节点名已存在"})
+		return
+	}
+
+	// 将AllowedTypes转换为JSON字符串
+	allowedTypesBytes, err := json.Marshal(req.AllowedTypes)
+	if err != nil {
+		h.logger.Error("转换AllowedTypes失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+	allowedTypesStr := string(allowedTypesBytes)
+
+	// 将Permission转换为JSON字符串
+	permissionBytes, err := json.Marshal(req.Permission)
+	if err != nil {
+		h.logger.Error("转换Permission失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+	permissionStr := string(permissionBytes)
+
+	// 将节点描述转换为JSON数组格式
+	// 如果用户输入的是简单字符串，将其转换为单元素数组
+	descriptionArray := []string{req.Description}
+	descriptionBytes, err := json.Marshal(descriptionArray)
+	if err != nil {
+		h.logger.Error("转换Description失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+	descriptionStr := string(descriptionBytes)
+
+	// 创建节点
+	node := &repository.Node{
+		NodeName:     combinedNodeName, // 使用组合后的节点名称
+		FrpsPort:     req.FrpsPort,
+		URL:          req.URL,
+		Token:        req.Token,                                           // 使用用户提供的Token
+		User:         req.User,                                            // 使用用户提供的User
+		Description:  sql.NullString{String: descriptionStr, Valid: true}, // 使用JSON数组格式的描述
+		Permission:   permissionStr,
+		AllowedTypes: allowedTypesStr,
+		Host:         sql.NullString{String: "", Valid: false}, // host字段保持为空
+		PortRange:    req.PortRange,
+		IP:           req.IP,
+		Status:       2, // 设置为待审核状态(2)
+	}
+
+	// 如果是用户捐赠，设置所有者ID
+	if user != nil && user.ID > 0 {
+		node.OwnerID = sql.NullInt64{Int64: user.ID, Valid: true}
+	}
+
+	// 保存节点
+	err = h.nodeService.CreateNode(context.Background(), node)
+	if err != nil {
+		h.logger.Error("创建捐赠节点失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "创建捐赠节点失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "节点捐赠成功，请等待管理员审核",
+		"data": gin.H{
+			"node_id":   node.ID,
+			"node_name": node.NodeName,
+			"status":    "待审核",
+		},
+	})
+}
+
+// GetUserNodes 获取用户自己的节点列表
+func (h *NodeHandler) GetUserNodes(c *gin.Context) {
+	// 从请求头获取token
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "未授权，请先登录"})
+		return
+	}
+
+	// 通过token获取用户信息
+	user, err := h.userService.GetByToken(context.Background(), token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "无效的token"})
+		return
+	}
+
+	// 获取分页参数
+	pageStr := c.DefaultQuery("page", "1")
+	pageSizeStr := c.DefaultQuery("page_size", "10")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的页码"})
+		return
+	}
+
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的每页数量"})
+		return
+	}
+
+	// 获取用户的所有节点列表
+	allNodes, err := h.nodeService.GetNodesByOwnerID(context.Background(), user.ID)
+	if err != nil {
+		h.logger.Error("获取用户节点失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+		return
+	}
+
+	// 计算总数和总页数
+	total := len(allNodes)
+	pages := (total + pageSize - 1) / pageSize
+
+	// 计算当前页的起始索引和结束索引
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	// 分页获取当前页的节点
+	var pageNodes []*repository.Node
+	if start < total {
+		pageNodes = allNodes[start:end]
+	} else {
+		pageNodes = []*repository.Node{}
+	}
+
+	// 构建返回数据
+	var nodeList []gin.H
+	for _, node := range pageNodes {
+		// 解析AllowedTypes字段，它是JSON格式的字符串
+		var allowedTypes []string
+		if err := json.Unmarshal([]byte(node.AllowedTypes), &allowedTypes); err != nil {
+			// 如果解析失败，使用原始字符串
+			h.logger.Error("解析allowed_types失败", "error", err, "value", node.AllowedTypes)
+			allowedTypes = []string{node.AllowedTypes}
+		}
+
+		// 解析Description字段，如果它也是JSON格式的字符串
+		var description interface{}
+		if node.Description.Valid {
+			if err := json.Unmarshal([]byte(node.Description.String), &description); err != nil {
+				// 如果解析失败，使用原始字符串
+				description = node.Description.String
+			}
+		} else {
+			description = ""
+		}
+
+		// 获取节点状态描述
+		var statusDesc string
+		switch node.Status {
+		case 0:
+			statusDesc = "禁用"
+		case 1:
+			statusDesc = "启用"
+		case 2:
+			statusDesc = "待审核"
+		default:
+			statusDesc = "未知"
+		}
+
+		nodeList = append(nodeList, gin.H{
+			"id":            node.ID,
+			"node_name":     node.NodeName,
+			"allowed_types": allowedTypes,
+			"port_range":    node.PortRange,
+			"description":   description,
+			"status":        node.Status,
+			"status_desc":   statusDesc,
+			"created_at":    node.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "获取成功",
+		"pagination": gin.H{
+			"page":      page,
+			"page_size": pageSize,
+			"pages":     pages,
+			"total":     total,
+		},
+		"nodes": nodeList,
 	})
 }

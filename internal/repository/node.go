@@ -25,6 +25,7 @@ type Node struct {
 	PortRange    string         `db:"port_range"`
 	IP           string         `db:"ip"`
 	Status       int            `db:"status"`
+	OwnerID      sql.NullInt64  `db:"owner_id"` // 节点所属的用户ID，系统节点为null
 	CreatedAt    time.Time      `db:"created_at"`
 	UpdatedAt    time.Time      `db:"updated_at"`
 }
@@ -36,6 +37,7 @@ type NodeRepository interface {
 	GetByNodeName(ctx context.Context, nodeName string) (*Node, error)
 	GetByUser(ctx context.Context, user string) ([]*Node, error)
 	GetByPermission(ctx context.Context, permission int64) ([]*Node, error)
+	GetByOwnerID(ctx context.Context, ownerID int64) ([]*Node, error)
 	Update(ctx context.Context, node *Node) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*Node, error)
@@ -53,12 +55,12 @@ func NewNodeRepository(db *sqlx.DB) NodeRepository {
 
 // Create 创建节点
 func (r *nodeRepository) Create(ctx context.Context, node *Node) error {
-	query := `INSERT INTO nodes (node_name, frps_port, url, token, user, description, permission, allowed_types, host, port_range, ip, status, created_at, updated_at) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+	query := `INSERT INTO nodes (node_name, frps_port, url, token, user, description, permission, allowed_types, host, port_range, ip, status, owner_id, created_at, updated_at) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 	result, err := r.db.ExecContext(ctx, query,
 		node.NodeName, node.FrpsPort, node.URL, node.Token, node.User,
 		node.Description, node.Permission, node.AllowedTypes, node.Host,
-		node.PortRange, node.IP, node.Status)
+		node.PortRange, node.IP, node.Status, node.OwnerID)
 	if err != nil {
 		return err
 	}
@@ -138,14 +140,25 @@ func (r *nodeRepository) GetByPermission(ctx context.Context, permission int64) 
 	return filteredNodes, nil
 }
 
+// GetByOwnerID 根据所属用户ID获取节点列表
+func (r *nodeRepository) GetByOwnerID(ctx context.Context, ownerID int64) ([]*Node, error) {
+	nodes := []*Node{}
+	query := `SELECT * FROM nodes WHERE owner_id = ?`
+	err := r.db.SelectContext(ctx, &nodes, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
 // Update 更新节点信息
 func (r *nodeRepository) Update(ctx context.Context, node *Node) error {
 	query := `UPDATE nodes SET node_name = ?, frps_port = ?, url = ?, token = ?, user = ?, 
-		description = ?, permission = ?, allowed_types = ?, host = ?, port_range = ?, ip = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		description = ?, permission = ?, allowed_types = ?, host = ?, port_range = ?, ip = ?, status = ?, owner_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query,
 		node.NodeName, node.FrpsPort, node.URL, node.Token, node.User,
 		node.Description, node.Permission, node.AllowedTypes, node.Host,
-		node.PortRange, node.IP, node.Status, node.ID)
+		node.PortRange, node.IP, node.Status, node.OwnerID, node.ID)
 	return err
 }
 

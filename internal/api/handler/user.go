@@ -526,8 +526,8 @@ func (h *UserHandler) GetGroupList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"msg":  "获取成功",
-		"data": groups,
+		"code":   200,
+		"msg":    "获取成功",
+		"groups": groups,
 	})
 }

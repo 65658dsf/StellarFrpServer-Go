@@ -96,7 +96,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// 初始化管理员处理器
 	userAdminHandler := admin.NewUserAdminHandler(userService, logger)
 	announcementAdminHandler := admin.NewAnnouncementAdminHandler(announcementService, logger)
-	nodeAdminHandler := admin.NewNodeAdminHandler(nodeService, nodeRepo, logger)
+	nodeAdminHandler := admin.NewNodeAdminHandler(nodeService, nodeRepo, userService, logger)
 	groupAdminHandler := admin.NewGroupAdminHandler(groupService, logger)
 	productAdminHandler := admin.NewProductAdminHandler(productService, userService, logger)
 

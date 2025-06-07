@@ -17,14 +17,16 @@ import (
 type NodeAdminHandler struct {
 	nodeService service.NodeService
 	nodeRepo    repository.NodeRepository
+	userService service.UserService
 	logger      *logger.Logger
 }
 
 // NewNodeAdminHandler 创建节点管理处理器实例
-func NewNodeAdminHandler(nodeService service.NodeService, nodeRepo repository.NodeRepository, logger *logger.Logger) *NodeAdminHandler {
+func NewNodeAdminHandler(nodeService service.NodeService, nodeRepo repository.NodeRepository, userService service.UserService, logger *logger.Logger) *NodeAdminHandler {
 	return &NodeAdminHandler{
 		nodeService: nodeService,
 		nodeRepo:    nodeRepo,
+		userService: userService,
 		logger:      logger,
 	}
 }
@@ -158,6 +160,7 @@ func (h *NodeAdminHandler) CreateNode(c *gin.Context) {
 		PortRange:    req.PortRange,
 		IP:           req.IP,
 		Status:       req.Status,
+		OwnerID:      sql.NullInt64{Int64: 0, Valid: false}, // 系统节点，OwnerID为null
 	}
 
 	// 保存节点
@@ -189,6 +192,7 @@ type UpdateNodeRequest struct {
 	PortRange    *string `json:"port_range"`
 	IP           *string `json:"ip"`
 	Status       *int    `json:"status"`
+	OwnerID      *int64  `json:"owner_id"` // 节点所属用户ID，可以为null
 	ID           *int64  `json:"id"`
 }
 
@@ -260,6 +264,9 @@ func (h *NodeAdminHandler) UpdateNode(c *gin.Context) {
 	}
 	if req.Status != nil {
 		node.Status = *req.Status
+	}
+	if req.OwnerID != nil {
+		node.OwnerID = sql.NullInt64{Int64: *req.OwnerID, Valid: true}
 	}
 
 	// 保存更新
@@ -351,4 +358,183 @@ func (h *NodeAdminHandler) SearchNodes(c *gin.Context) {
 func containsIgnoreCase(s, substr string) bool {
 	s, substr = strings.ToLower(s), strings.ToLower(substr)
 	return strings.Contains(s, substr)
+}
+
+// ReviewDonatedNodeRequest 审核捐赠节点请求
+type ReviewDonatedNodeRequest struct {
+	ID     int64  `json:"id" binding:"required"`     // 节点ID
+	Action string `json:"action" binding:"required"` // 操作：approve或reject
+}
+
+// ReviewDonatedNode 审核捐赠节点
+func (h *NodeAdminHandler) ReviewDonatedNode(c *gin.Context) {
+	var req ReviewDonatedNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Error("审核捐赠节点参数绑定失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误：" + err.Error()})
+		return
+	}
+
+	// 检查操作类型
+	if req.Action != "approve" && req.Action != "reject" {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的操作类型，只能是approve或reject"})
+		return
+	}
+
+	// 获取节点信息
+	node, err := h.nodeService.GetByID(context.Background(), req.ID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "节点不存在"})
+		return
+	}
+
+	// 检查节点状态，只有状态为2（待审核）的节点才能审核
+	if node.Status != 2 {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "只能审核状态为'待审核'的节点"})
+		return
+	}
+
+	if req.Action == "approve" {
+		// 更新节点状态为可用
+		node.Status = 1 // 设置为启用状态
+
+		// 保存更新
+		err = h.nodeRepo.Update(context.Background(), node)
+		if err != nil {
+			h.logger.Error("更新节点状态失败", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "审核节点失败：" + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": 200,
+			"msg":  "节点审核通过",
+			"data": node,
+		})
+	} else {
+		// 对于拒绝操作，直接删除节点
+		err = h.nodeRepo.Delete(context.Background(), req.ID)
+		if err != nil {
+			h.logger.Error("删除捐赠节点失败", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "拒绝节点失败：" + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": 200,
+			"msg":  "已拒绝并删除该捐赠节点",
+		})
+	}
+}
+
+// ListDonatedNodes 获取待审核的捐赠节点列表
+func (h *NodeAdminHandler) ListDonatedNodes(c *gin.Context) {
+	// 获取分页参数
+	pageStr := c.DefaultQuery("page", "1")
+	pageSizeStr := c.DefaultQuery("page_size", "10")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的页码"})
+		return
+	}
+
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的每页数量"})
+		return
+	}
+
+	// 获取所有节点
+	allNodes, err := h.nodeService.GetAllNodes(context.Background())
+	if err != nil {
+		h.logger.Error("获取节点列表失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取待审核节点失败"})
+		return
+	}
+
+	// 过滤出状态为2（待审核）的节点
+	var donatedNodes []*repository.Node
+	for _, node := range allNodes {
+		if node.Status == 2 {
+			donatedNodes = append(donatedNodes, node)
+		}
+	}
+
+	// 计算总数和总页数
+	total := len(donatedNodes)
+	pages := (total + pageSize - 1) / pageSize
+
+	// 计算当前页的起始索引和结束索引
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	// 分页获取当前页的节点
+	var pageNodes []*repository.Node
+	if start < total {
+		pageNodes = donatedNodes[start:end]
+	} else {
+		pageNodes = []*repository.Node{}
+	}
+
+	// 构建返回数据，包含用户信息
+	var nodeList []gin.H
+	for _, node := range pageNodes {
+		nodeData := gin.H{
+			"ID":           node.ID,
+			"NodeName":     node.NodeName,
+			"FrpsPort":     node.FrpsPort,
+			"URL":          node.URL,
+			"Token":        node.Token,
+			"User":         node.User,
+			"Description":  node.Description,
+			"Permission":   node.Permission,
+			"AllowedTypes": node.AllowedTypes,
+			"Host":         node.Host,
+			"PortRange":    node.PortRange,
+			"IP":           node.IP,
+			"Status":       node.Status,
+			"CreatedAt":    node.CreatedAt,
+			"UpdatedAt":    node.UpdatedAt,
+		}
+
+		// 如果有所有者ID，获取用户信息
+		if node.OwnerID.Valid {
+			// 添加所有者ID
+			ownerID := node.OwnerID.Int64
+			ownerData := gin.H{
+				"Id": ownerID,
+			}
+
+			// 查询用户信息
+			user, err := h.userService.GetByID(context.Background(), ownerID)
+			if err == nil && user != nil {
+				// 添加用户名
+				ownerData["Username"] = user.Username
+			}
+
+			nodeData["Owner"] = ownerData
+		} else {
+			nodeData["Owner"] = gin.H{
+				"Id": 0,
+			}
+		}
+
+		nodeList = append(nodeList, nodeData)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "获取成功",
+		"pagination": gin.H{
+			"page":      page,
+			"page_size": pageSize,
+			"pages":     pages,
+			"total":     total,
+		},
+		"nodes": nodeList,
+	})
 }

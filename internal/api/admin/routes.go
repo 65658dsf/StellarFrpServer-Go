@@ -41,6 +41,9 @@ func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHan
 		nodes.POST("/update", nodeAdminHandler.UpdateNode)
 		nodes.POST("/delete", nodeAdminHandler.DeleteNode)
 		nodes.GET("/search", nodeAdminHandler.SearchNodes)
+		// 捐赠节点相关路由
+		nodes.GET("/donated", nodeAdminHandler.ListDonatedNodes)
+		nodes.POST("/review", nodeAdminHandler.ReviewDonatedNode)
 	}
 
 	// 用户组管理路由

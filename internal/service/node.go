@@ -11,8 +11,10 @@ type NodeService interface {
 	GetByNodeName(ctx context.Context, nodeName string) (*repository.Node, error)
 	GetByUser(ctx context.Context, user string) ([]*repository.Node, error)
 	GetAccessibleNodes(ctx context.Context, groupID int64) ([]*repository.Node, error)
+	GetNodesByOwnerID(ctx context.Context, ownerID int64) ([]*repository.Node, error)
 	List(ctx context.Context, offset, limit int) ([]*repository.Node, error)
 	GetAllNodes(ctx context.Context) ([]*repository.Node, error)
+	CreateNode(ctx context.Context, node *repository.Node) error
 }
 
 // nodeService 节点服务实现
@@ -46,6 +48,11 @@ func (s *nodeService) GetAccessibleNodes(ctx context.Context, groupID int64) ([]
 	return s.nodeRepo.GetByPermission(ctx, groupID)
 }
 
+// GetNodesByOwnerID 根据所属用户ID获取节点列表
+func (s *nodeService) GetNodesByOwnerID(ctx context.Context, ownerID int64) ([]*repository.Node, error) {
+	return s.nodeRepo.GetByOwnerID(ctx, ownerID)
+}
+
 // List 获取节点列表
 func (s *nodeService) List(ctx context.Context, offset, limit int) ([]*repository.Node, error) {
 	return s.nodeRepo.List(ctx, offset, limit)
@@ -55,4 +62,9 @@ func (s *nodeService) List(ctx context.Context, offset, limit int) ([]*repositor
 func (s *nodeService) GetAllNodes(ctx context.Context) ([]*repository.Node, error) {
 	// 使用List方法获取所有节点，不分页
 	return s.nodeRepo.List(ctx, 0, 10000) // 设置一个足够大的数字
+}
+
+// CreateNode 创建节点
+func (s *nodeService) CreateNode(ctx context.Context, node *repository.Node) error {
+	return s.nodeRepo.Create(ctx, node)
 }

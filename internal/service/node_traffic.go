@@ -49,6 +49,11 @@ func (s *nodeTrafficService) CheckNodeStatus(ctx context.Context) error {
 
 	// 遍历所有节点，检查连接状态
 	for _, node := range nodes {
+		// 跳过待审核状态(2)的节点
+		if node.Status == 2 {
+			continue
+		}
+
 		ip := node.IP
 		port := node.FrpsPort
 		status := node.Status
@@ -98,8 +103,8 @@ func (s *nodeTrafficService) RecordNodeTraffic(ctx context.Context) error {
 
 	// 为每个节点记录流量信息
 	for _, node := range nodes {
-		// 跳过离线节点
-		if node.Status == 0 {
+		// 跳过离线节点和待审核节点
+		if node.Status == 0 || node.Status == 2 {
 			continue
 		}
 
