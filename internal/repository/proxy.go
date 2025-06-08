@@ -39,7 +39,9 @@ type ProxyRepository interface {
 	Update(ctx context.Context, proxy *Proxy) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*Proxy, error)
+	ListByStatus(ctx context.Context, status string, offset, limit int) ([]*Proxy, error)
 	Count(ctx context.Context) (int, error)
+	CountByStatus(ctx context.Context, status string) (int, error)
 	IsRemotePortUsed(ctx context.Context, nodeID int64, proxyType string, remotePort string) (bool, error)
 }
 
@@ -164,11 +166,33 @@ func (r *proxyRepository) List(ctx context.Context, offset, limit int) ([]*Proxy
 	return proxies, nil
 }
 
+// ListByStatus 根据状态获取隧道列表
+func (r *proxyRepository) ListByStatus(ctx context.Context, status string, offset, limit int) ([]*Proxy, error) {
+	query := `SELECT * FROM proxy WHERE status = ? ORDER BY id DESC LIMIT ? OFFSET ?`
+	var proxies []*Proxy
+	err := r.db.SelectContext(ctx, &proxies, query, status, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return proxies, nil
+}
+
 // Count 获取隧道总数
 func (r *proxyRepository) Count(ctx context.Context) (int, error) {
 	query := `SELECT COUNT(*) FROM proxy`
 	var count int
 	err := r.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// CountByStatus 获取指定状态的隧道总数
+func (r *proxyRepository) CountByStatus(ctx context.Context, status string) (int, error) {
+	query := `SELECT COUNT(*) FROM proxy WHERE status = ?`
+	var count int
+	err := r.db.GetContext(ctx, &count, query, status)
 	if err != nil {
 		return 0, err
 	}

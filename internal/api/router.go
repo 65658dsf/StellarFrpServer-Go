@@ -99,6 +99,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	nodeAdminHandler := admin.NewNodeAdminHandler(nodeService, nodeRepo, userService, logger)
 	groupAdminHandler := admin.NewGroupAdminHandler(groupService, logger)
 	productAdminHandler := admin.NewProductAdminHandler(productService, userService, logger)
+	proxyAdminHandler := admin.NewProxyAdminHandler(proxyService, nodeService, userService, redisClient, logger)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -123,7 +124,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	adminRouter := v1.Group("/admin")
 	// 添加管理员认证中间件
 	adminRouter.Use(middleware.AdminAuth(userService))
-	admin.RegisterAdminRoutes(adminRouter, userAdminHandler, announcementAdminHandler, nodeAdminHandler, groupAdminHandler, productAdminHandler)
+	admin.RegisterAdminRoutes(adminRouter, userAdminHandler, announcementAdminHandler, nodeAdminHandler, groupAdminHandler, productAdminHandler, proxyAdminHandler)
 
 	return router
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterAdminRoutes 注册管理员API路由
-func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler, nodeAdminHandler *NodeAdminHandler, groupAdminHandler *GroupAdminHandler, productAdminHandler *ProductAdminHandler) {
+func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHandler, announcementAdminHandler *AnnouncementAdminHandler, nodeAdminHandler *NodeAdminHandler, groupAdminHandler *GroupAdminHandler, productAdminHandler *ProductAdminHandler, proxyAdminHandler *ProxyAdminHandler) {
 	// 用户管理路由
 	users := router.Group("/users")
 	{
@@ -77,5 +77,17 @@ func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHan
 		orders.GET("/:order_no", productAdminHandler.GetOrder)
 		orders.POST("/update", productAdminHandler.UpdateOrderStatus)
 		orders.POST("/delete", productAdminHandler.DeleteOrder)
+	}
+
+	// 隧道管理路由
+	proxies := router.Group("/proxies")
+	proxies.Use(middleware.AdminAuth(userAdminHandler.userService))
+	{
+		proxies.GET("", proxyAdminHandler.ListProxies)
+		proxies.GET("/status", proxyAdminHandler.ListAllProxiesStatus)
+		proxies.GET("/:id/status", proxyAdminHandler.GetProxyStatus)
+		proxies.GET("/search", proxyAdminHandler.SearchProxies)
+		proxies.POST("/close", proxyAdminHandler.CloseProxy)
+		proxies.POST("/user/close", proxyAdminHandler.CloseUserProxies)
 	}
 }

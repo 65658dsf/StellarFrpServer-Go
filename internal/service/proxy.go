@@ -23,7 +23,9 @@ type ProxyService interface {
 	Update(ctx context.Context, proxy *repository.Proxy) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, offset, limit int) ([]*repository.Proxy, error)
+	ListByStatus(ctx context.Context, status string, offset, limit int) ([]*repository.Proxy, error)
 	Count(ctx context.Context) (int, error)
+	CountByStatus(ctx context.Context, status string) (int, error)
 	IsRemotePortUsed(ctx context.Context, nodeID int64, proxyType string, remotePort string) (bool, error)
 	GetUserProxyCount(ctx context.Context, username string) (int, error)
 	CheckUserNodeAccess(ctx context.Context, username string, nodeID int64) (bool, error)
@@ -246,9 +248,19 @@ func (s *proxyService) List(ctx context.Context, offset, limit int) ([]*reposito
 	return s.proxyRepo.List(ctx, offset, limit)
 }
 
+// ListByStatus 根据状态获取隧道列表
+func (s *proxyService) ListByStatus(ctx context.Context, status string, offset, limit int) ([]*repository.Proxy, error) {
+	return s.proxyRepo.ListByStatus(ctx, status, offset, limit)
+}
+
 // Count 获取隧道总数
 func (s *proxyService) Count(ctx context.Context) (int, error) {
 	return s.proxyRepo.Count(ctx)
+}
+
+// CountByStatus 获取指定状态的隧道总数
+func (s *proxyService) CountByStatus(ctx context.Context, status string) (int, error) {
+	return s.proxyRepo.CountByStatus(ctx, status)
 }
 
 // IsRemotePortUsed 检查同一节点下相同协议类型的隧道是否已经使用了相同的远程端口
