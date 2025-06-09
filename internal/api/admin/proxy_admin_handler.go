@@ -1090,3 +1090,114 @@ func (h *ProxyAdminHandler) CloseUserProxies(c *gin.Context) {
 		},
 	})
 }
+
+// DeleteProxy 管理员删除隧道
+func (h *ProxyAdminHandler) DeleteProxy(c *gin.Context) {
+	// 获取隧道ID
+	type DeleteRequest struct {
+		ID int64 `json:"id" binding:"required"`
+	}
+
+	var req DeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误：" + err.Error()})
+		return
+	}
+
+	// 获取隧道信息
+	proxy, err := h.proxyService.GetByID(context.Background(), req.ID)
+	if err != nil {
+		h.logger.Error("获取隧道信息失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取隧道信息失败"})
+		return
+	}
+
+	if proxy == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "隧道不存在"})
+		return
+	}
+
+	// 如果隧道处于在线状态，先关闭隧道
+	if proxy.Status == "online" && proxy.RunID != "" {
+		// 获取节点信息
+		node, err := h.nodeService.GetByID(context.Background(), proxy.Node)
+		if err != nil {
+			h.logger.Error("获取节点信息失败", "error", err, "nodeID", proxy.Node)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "获取节点信息失败"})
+			return
+		}
+
+		// 构建关闭隧道的请求
+		requestBody, err := json.Marshal(map[string]string{
+			"runid": proxy.RunID,
+		})
+		if err != nil {
+			h.logger.Error("构建请求体失败", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+			return
+		}
+
+		// 发送关闭请求到节点
+		apiURL := fmt.Sprintf("%s/api/client/kick", node.URL)
+		client := &http.Client{
+			Timeout: 10 * time.Second,
+		}
+
+		req2, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+		if err != nil {
+			h.logger.Error("创建请求失败", "error", err, "url", apiURL)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "服务器内部错误"})
+			return
+		}
+
+		req2.Header.Set("Content-Type", "application/json")
+		req2.SetBasicAuth(node.User, node.Token)
+
+		resp, err := client.Do(req2)
+		if err != nil {
+			h.logger.Error("发送请求失败", "error", err, "url", apiURL)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "关闭隧道请求失败，无法删除"})
+			return
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			h.logger.Error("读取响应失败", "error", err)
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "读取响应失败"})
+			return
+		}
+
+		// 尝试解析响应，但即使解析失败也继续执行删除操作
+		var result map[string]interface{}
+		if err := json.Unmarshal(body, &result); err != nil {
+			h.logger.Warn("解析节点响应失败，但将继续删除隧道", "error", err, "body", string(body))
+		} else if resp.StatusCode != http.StatusOK {
+			h.logger.Warn("节点返回非200状态码，但将继续删除隧道", "statusCode", resp.StatusCode, "response", string(body))
+		}
+
+		h.logger.Info("已尝试关闭隧道，准备删除", "proxy_id", proxy.ID, "proxy_name", proxy.ProxyName)
+	}
+
+	// 删除隧道
+	err = h.proxyService.Delete(context.Background(), req.ID)
+	if err != nil {
+		h.logger.Error("删除隧道失败", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "删除隧道失败: " + err.Error()})
+		return
+	}
+
+	// 清除状态缓存
+	cacheKey := fmt.Sprintf("proxy:status:%d", proxy.ID)
+	h.redisCli.Del(context.Background(), cacheKey)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "隧道已成功删除",
+		"data": gin.H{
+			"id":         proxy.ID,
+			"proxy_name": proxy.ProxyName,
+			"username":   proxy.Username,
+		},
+	})
+}

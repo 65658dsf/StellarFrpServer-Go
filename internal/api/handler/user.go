@@ -393,6 +393,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"UsedTraffic":  usedTraffic,                                        // 已使用流量信息
 		"Tunnels":      fmt.Sprintf("%d/%d", proxyCount, totalTunnelLimit), // 隧道数量：已用/总数
 		"Bandwidth":    totalBandwidth,                                     // 带宽限制(Mbps)
+		"GroupTime":    user.GroupTime.Format("2006-01-02 15:04:05"),
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})

@@ -89,5 +89,6 @@ func RegisterAdminRoutes(router *gin.RouterGroup, userAdminHandler *UserAdminHan
 		proxies.GET("/search", proxyAdminHandler.SearchProxies)
 		proxies.POST("/close", proxyAdminHandler.CloseProxy)
 		proxies.POST("/user/close", proxyAdminHandler.CloseUserProxies)
+		proxies.POST("/delete", proxyAdminHandler.DeleteProxy)
 	}
 }
