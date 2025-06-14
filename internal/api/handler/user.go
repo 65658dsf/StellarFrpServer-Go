@@ -377,6 +377,19 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	totalBandwidth := 0
 	if userGroup != nil {
 		totalBandwidth = userGroup.BandwidthLimit + userBandwidth
+	} else {
+		// 如果userGroup为nil，只使用用户自身的带宽
+		totalBandwidth = userBandwidth
+		h.logger.Warn("User group is nil, using only user bandwidth", "user_id", user.ID)
+	}
+
+	// 处理GroupTime，确保不为nil
+	groupTimeStr := ""
+	if user.GroupTime != nil {
+		groupTimeStr = user.GroupTime.Format("2006-01-02 15:04:05")
+	} else {
+		groupTimeStr = "未设置"
+		h.logger.Warn("User group time is nil", "user_id", user.ID)
 	}
 
 	userInfo := gin.H{
@@ -393,7 +406,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"UsedTraffic":  usedTraffic,                                        // 已使用流量信息
 		"Tunnels":      fmt.Sprintf("%d/%d", proxyCount, totalTunnelLimit), // 隧道数量：已用/总数
 		"Bandwidth":    totalBandwidth,                                     // 带宽限制(Mbps)
-		"GroupTime":    user.GroupTime.Format("2006-01-02 15:04:05"),
+		"GroupTime":    groupTimeStr,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "获取成功", "data": userInfo})

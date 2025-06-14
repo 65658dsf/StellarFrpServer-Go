@@ -155,6 +155,35 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 		return
 	}
 
+	// 获取每个节点的总流量数据
+	nodeTrafficMap := make(map[string]*repository.NodeTrafficLog)
+	ctx := context.Background()
+
+	// 获取所有节点的总流量和
+	totalTrafficIn, totalTrafficOut, err := h.nodeService.GetTotalTraffic(ctx)
+	if err != nil {
+		h.logger.Error("Failed to get total traffic", "error", err)
+		// 错误不中断流程，继续处理
+	}
+
+	// 格式化总流量
+	totalInFormatted := formatTraffic(totalTrafficIn)
+	totalOutFormatted := formatTraffic(totalTrafficOut)
+
+	for _, node := range nodes {
+		// 获取最新的流量记录
+		trafficLog, err := h.nodeService.GetLatestNodeTraffic(ctx, node.NodeName)
+		if err != nil {
+			h.logger.Error("Failed to get node traffic", "error", err, "node", node.NodeName)
+			// 错误不中断流程，继续处理其他节点
+			continue
+		}
+
+		if trafficLog != nil {
+			nodeTrafficMap[node.NodeName] = trafficLog
+		}
+	}
+
 	// 创建HTTP客户端，设置超时
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -184,13 +213,15 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to create request", "error", err, "url", apiURL)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"NodeName":   node.NodeName,
-					"Status":     "offline",
-					"Error":      "请求创建失败",
-					"Version":    "",
-					"Clients":    0,
-					"TrafficIn":  "",
-					"TrafficOut": "",
+					"NodeName":        node.NodeName,
+					"Status":          "offline",
+					"Error":           "请求创建失败",
+					"Version":         "",
+					"Clients":         0,
+					"TrafficIn":       "",
+					"TrafficOut":      "",
+					"TotalTrafficIn":  "",
+					"TotalTrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -205,13 +236,15 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to get node info", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"NodeName":   node.NodeName,
-					"Status":     "offline",
-					"Error":      err.Error(),
-					"Version":    "",
-					"Clients":    0,
-					"TrafficIn":  "",
-					"TrafficOut": "",
+					"NodeName":        node.NodeName,
+					"Status":          "offline",
+					"Error":           err.Error(),
+					"Version":         "",
+					"Clients":         0,
+					"TrafficIn":       "",
+					"TrafficOut":      "",
+					"TotalTrafficIn":  "",
+					"TotalTrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -224,13 +257,15 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to read response", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"NodeName":   node.NodeName,
-					"Status":     "offline",
-					"Error":      "响应读取失败",
-					"Version":    "",
-					"Clients":    0,
-					"TrafficIn":  "",
-					"TrafficOut": "",
+					"NodeName":        node.NodeName,
+					"Status":          "offline",
+					"Error":           "响应读取失败",
+					"Version":         "",
+					"Clients":         0,
+					"TrafficIn":       "",
+					"TrafficOut":      "",
+					"TotalTrafficIn":  "",
+					"TotalTrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -242,13 +277,15 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				h.logger.Error("Failed to parse response", "error", err, "node", node.NodeName)
 				mu.Lock()
 				results[strconv.FormatInt(node.ID, 10)] = gin.H{
-					"NodeName":   node.NodeName,
-					"Status":     "offline",
-					"Error":      "响应解析失败",
-					"Version":    "",
-					"Clients":    0,
-					"TrafficIn":  "",
-					"TrafficOut": "",
+					"NodeName":        node.NodeName,
+					"Status":          "offline",
+					"Error":           "响应解析失败",
+					"Version":         "",
+					"Clients":         0,
+					"TrafficIn":       "",
+					"TrafficOut":      "",
+					"TotalTrafficIn":  "",
+					"TotalTrafficOut": "",
 				}
 				mu.Unlock()
 				return
@@ -258,15 +295,25 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 			trafficIn := formatTraffic(nodeInfo.TotalTrafficIn)
 			trafficOut := formatTraffic(nodeInfo.TotalTrafficOut)
 
+			// 获取总流量数据
+			totalTrafficIn := ""
+			totalTrafficOut := ""
+			if trafficLog, ok := nodeTrafficMap[node.NodeName]; ok && trafficLog != nil {
+				totalTrafficIn = formatTraffic(trafficLog.TrafficIn)
+				totalTrafficOut = formatTraffic(trafficLog.TrafficOut)
+			}
+
 			// 保存结果
 			mu.Lock()
 			results[strconv.FormatInt(node.ID, 10)] = gin.H{
-				"NodeName":   node.NodeName,
-				"Status":     "online",
-				"Version":    nodeInfo.Version,
-				"Clients":    nodeInfo.ClientCounts,
-				"TrafficIn":  trafficIn,
-				"TrafficOut": trafficOut,
+				"NodeName":        node.NodeName,
+				"Status":          "online",
+				"Version":         nodeInfo.Version,
+				"Clients":         nodeInfo.ClientCounts,
+				"TrafficIn":       trafficIn,
+				"TrafficOut":      trafficOut,
+				"TotalTrafficIn":  totalTrafficIn,
+				"TotalTrafficOut": totalTrafficOut,
 			}
 			mu.Unlock()
 		}(node)
@@ -279,6 +326,10 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 		"code": 200,
 		"msg":  "获取成功",
 		"data": results,
+		"summary": gin.H{
+			"AllNodesTrafficIn":  totalInFormatted,
+			"AllNodesTrafficOut": totalOutFormatted,
+		},
 	})
 }
 

@@ -109,8 +109,6 @@ func (s *nodeTrafficService) RecordNodeTraffic(ctx context.Context) error {
 		}
 
 		// 构建API请求获取节点信息
-		// 这里需要实现具体的API请求逻辑，获取节点的流量数据
-		// 为了示例，我们假设有以下数据
 		nodeInfo, err := s.getNodeNetworkInfo(ctx, node)
 		if err != nil {
 			s.logger.Error("Failed to get node network info", "node", node.NodeName, "error", err)
@@ -135,66 +133,52 @@ func (s *nodeTrafficService) RecordNodeTraffic(ctx context.Context) error {
 			trafficOutIncrement = nodeInfo.TotalTrafficOut
 		}
 
-		// 处理当天的增量记录
-		todayIncrementRecord, err := s.nodeTrafficRepo.GetTodayIncrement(ctx, node.NodeName, currentDate)
+		// 获取前一天的流量记录
+		var previousTotalTrafficIn, previousTotalTrafficOut int64
+		previousDate := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+		previousRecord, err := s.nodeTrafficRepo.GetDailyRecord(ctx, node.NodeName, previousDate)
 		if err != nil {
-			s.logger.Error("Failed to get today's increment record", "node", node.NodeName, "error", err)
+			s.logger.Error("Failed to get previous day's record", "node", node.NodeName, "error", err)
+			// 错误不中断流程，继续尝试获取当天记录
+		}
+
+		// 如果找到前一天的记录，使用它的值作为基础
+		if previousRecord != nil {
+			previousTotalTrafficIn = previousRecord.TrafficIn
+			previousTotalTrafficOut = previousRecord.TrafficOut
+		}
+
+		// 计算今天的累计总流量 = 前一天的总流量 + 今天的增量
+		totalTrafficIn := previousTotalTrafficIn + trafficInIncrement
+		totalTrafficOut := previousTotalTrafficOut + trafficOutIncrement
+
+		// 处理当天的流量记录
+		todayRecord, err := s.nodeTrafficRepo.GetDailyRecord(ctx, node.NodeName, currentDate)
+		if err != nil {
+			s.logger.Error("Failed to get today's record", "node", node.NodeName, "error", err)
 			continue
 		}
 
-		if todayIncrementRecord != nil {
+		if todayRecord != nil {
 			// 已有记录，更新
-			err = s.nodeTrafficRepo.UpdateIncrement(ctx, todayIncrementRecord.ID, trafficInIncrement, trafficOutIncrement, nodeInfo.OnlineCount)
+			err = s.nodeTrafficRepo.UpdateRecord(ctx, todayRecord.ID, totalTrafficIn, totalTrafficOut, nodeInfo.OnlineCount)
 			if err != nil {
-				s.logger.Error("Failed to update increment record", "node", node.NodeName, "error", err)
+				s.logger.Error("Failed to update record", "node", node.NodeName, "error", err)
 				continue
 			}
 		} else {
 			// 没有记录，创建新的
 			newRecord := &repository.NodeTrafficLog{
 				NodeName:    node.NodeName,
-				TrafficIn:   trafficInIncrement,
-				TrafficOut:  trafficOutIncrement,
+				TrafficIn:   totalTrafficIn,
+				TrafficOut:  totalTrafficOut,
 				OnlineCount: nodeInfo.OnlineCount,
 				RecordTime:  time.Now(),
 				RecordDate:  currentDate,
-				IsIncrement: true,
 			}
 			err = s.nodeTrafficRepo.Create(ctx, newRecord)
 			if err != nil {
-				s.logger.Error("Failed to create increment record", "node", node.NodeName, "error", err)
-				continue
-			}
-		}
-
-		// 处理当天的总流量记录
-		todayTotalRecord, err := s.nodeTrafficRepo.GetTodayTotal(ctx, node.NodeName, currentDate)
-		if err != nil {
-			s.logger.Error("Failed to get today's total record", "node", node.NodeName, "error", err)
-			continue
-		}
-
-		if todayTotalRecord != nil {
-			// 已有记录，更新
-			err = s.nodeTrafficRepo.UpdateTotal(ctx, todayTotalRecord.ID, nodeInfo.TotalTrafficIn, nodeInfo.TotalTrafficOut, nodeInfo.OnlineCount)
-			if err != nil {
-				s.logger.Error("Failed to update total record", "node", node.NodeName, "error", err)
-				continue
-			}
-		} else {
-			// 没有记录，创建新的
-			newRecord := &repository.NodeTrafficLog{
-				NodeName:    node.NodeName,
-				TrafficIn:   nodeInfo.TotalTrafficIn,
-				TrafficOut:  nodeInfo.TotalTrafficOut,
-				OnlineCount: nodeInfo.OnlineCount,
-				RecordTime:  time.Now(),
-				RecordDate:  currentDate,
-				IsIncrement: false,
-			}
-			err = s.nodeTrafficRepo.Create(ctx, newRecord)
-			if err != nil {
-				s.logger.Error("Failed to create total record", "node", node.NodeName, "error", err)
+				s.logger.Error("Failed to create record", "node", node.NodeName, "error", err)
 				continue
 			}
 		}

@@ -15,16 +15,22 @@ type NodeService interface {
 	List(ctx context.Context, offset, limit int) ([]*repository.Node, error)
 	GetAllNodes(ctx context.Context) ([]*repository.Node, error)
 	CreateNode(ctx context.Context, node *repository.Node) error
+	GetLatestNodeTraffic(ctx context.Context, nodeName string) (*repository.NodeTrafficLog, error)
+	GetTotalTraffic(ctx context.Context) (int64, int64, error) // 返回总入站流量和总出站流量
 }
 
 // nodeService 节点服务实现
 type nodeService struct {
-	nodeRepo repository.NodeRepository
+	nodeRepo        repository.NodeRepository
+	nodeTrafficRepo repository.NodeTrafficRepository
 }
 
 // NewNodeService 创建节点服务实例
-func NewNodeService(nodeRepo repository.NodeRepository) NodeService {
-	return &nodeService{nodeRepo: nodeRepo}
+func NewNodeService(nodeRepo repository.NodeRepository, nodeTrafficRepo repository.NodeTrafficRepository) NodeService {
+	return &nodeService{
+		nodeRepo:        nodeRepo,
+		nodeTrafficRepo: nodeTrafficRepo,
+	}
 }
 
 // GetByID 根据ID获取节点
@@ -67,4 +73,22 @@ func (s *nodeService) GetAllNodes(ctx context.Context) ([]*repository.Node, erro
 // CreateNode 创建节点
 func (s *nodeService) CreateNode(ctx context.Context, node *repository.Node) error {
 	return s.nodeRepo.Create(ctx, node)
+}
+
+// GetLatestNodeTraffic 获取指定节点的最新流量记录
+func (s *nodeService) GetLatestNodeTraffic(ctx context.Context, nodeName string) (*repository.NodeTrafficLog, error) {
+	// 首先检查节点是否存在
+	_, err := s.nodeRepo.GetByNodeName(ctx, nodeName)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取该节点的最新流量记录
+	return s.nodeTrafficRepo.GetLastRecord(ctx, nodeName)
+}
+
+// GetTotalTraffic 获取所有节点的总流量
+func (s *nodeService) GetTotalTraffic(ctx context.Context) (int64, int64, error) {
+	// 直接从流量记录表中获取所有流量的总和
+	return s.nodeTrafficRepo.GetTotalTraffic(ctx)
 }

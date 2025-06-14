@@ -49,8 +49,7 @@ func (r *SystemRepository) GetSystemStatus(ctx context.Context) (*model.SystemSt
 		SELECT 
 			COALESCE(SUM(traffic_in), 0) as total_in,
 			COALESCE(SUM(traffic_out), 0) as total_out
-		FROM node_traffic_log 
-		WHERE is_increment = FALSE
+		FROM node_traffic_log
 	`)
 	if err != nil {
 		return nil, err
