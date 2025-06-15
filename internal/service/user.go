@@ -614,12 +614,10 @@ func (s *userService) UpdateUserGroup(ctx context.Context, userID int64, groupID
 		// 会员未过期，在现有时间基础上增加一个月
 		expireTime := user.GroupTime.AddDate(0, 1, 0)
 		user.GroupTime = &expireTime
-		s.logger.Info("会员续期", "user_id", userID, "old_expire", user.GroupTime, "new_expire", expireTime)
 	} else {
 		// 会员已过期或没有会员，从当前时间开始计算一个月
 		expireTime := now.AddDate(0, 1, 0)
 		user.GroupTime = &expireTime
-		s.logger.Info("会员新开通", "user_id", userID, "expire", expireTime)
 	}
 
 	// 保存到数据库
@@ -628,6 +626,5 @@ func (s *userService) UpdateUserGroup(ctx context.Context, userID int64, groupID
 		return fmt.Errorf("更新用户组失败: %w", err)
 	}
 
-	s.logger.Info("用户组升级成功", "user_id", userID, "group_id", groupID, "group_name", group.Name, "expire_time", user.GroupTime)
 	return nil
 }

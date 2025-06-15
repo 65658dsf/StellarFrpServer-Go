@@ -123,9 +123,6 @@ func (h *ProductHandler) AfdianWebhook(c *gin.Context) {
 		return
 	}
 
-	// 记录请求内容
-	h.logger.Info("收到爱发电Webhook请求", "body", string(body))
-
 	// 解析JSON数据
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {

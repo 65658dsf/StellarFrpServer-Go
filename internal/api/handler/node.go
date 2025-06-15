@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // NodeHandler 节点处理器
@@ -22,14 +23,16 @@ type NodeHandler struct {
 	nodeService service.NodeService
 	userService service.UserService
 	logger      *logger.Logger
+	redisClient *redis.Client
 }
 
 // NewNodeHandler 创建节点处理器实例
-func NewNodeHandler(nodeService service.NodeService, userService service.UserService, logger *logger.Logger) *NodeHandler {
+func NewNodeHandler(nodeService service.NodeService, userService service.UserService, logger *logger.Logger, redisClient *redis.Client) *NodeHandler {
 	return &NodeHandler{
 		nodeService: nodeService,
 		userService: userService,
 		logger:      logger,
+		redisClient: redisClient,
 	}
 }
 
@@ -222,6 +225,7 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 					"TrafficOut":      "",
 					"TotalTrafficIn":  "",
 					"TotalTrafficOut": "",
+					"Load":            "0.00%",
 				}
 				mu.Unlock()
 				return
@@ -245,6 +249,7 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 					"TrafficOut":      "",
 					"TotalTrafficIn":  "",
 					"TotalTrafficOut": "",
+					"Load":            "0.00%",
 				}
 				mu.Unlock()
 				return
@@ -266,6 +271,7 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 					"TrafficOut":      "",
 					"TotalTrafficIn":  "",
 					"TotalTrafficOut": "",
+					"Load":            "0.00%",
 				}
 				mu.Unlock()
 				return
@@ -286,6 +292,7 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 					"TrafficOut":      "",
 					"TotalTrafficIn":  "",
 					"TotalTrafficOut": "",
+					"Load":            "0.00%",
 				}
 				mu.Unlock()
 				return
@@ -303,6 +310,18 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				totalTrafficOut = formatTraffic(trafficLog.TrafficOut)
 			}
 
+			// 获取节点负载信息
+			loadKey := fmt.Sprintf("node:load:%s", node.IP)
+			loadValue, err := h.redisClient.Get(ctx, loadKey).Result()
+			if err != nil && err != redis.Nil {
+				h.logger.Error("Failed to get node load from Redis", "error", err, "ip", node.IP)
+			}
+
+			// 如果没有找到负载信息，设置为默认值
+			if err == redis.Nil {
+				loadValue = "N/A"
+			}
+
 			// 保存结果
 			mu.Lock()
 			results[strconv.FormatInt(node.ID, 10)] = gin.H{
@@ -314,6 +333,7 @@ func (h *NodeHandler) GetNodesInfo(c *gin.Context) {
 				"TrafficOut":      trafficOut,
 				"TotalTrafficIn":  totalTrafficIn,
 				"TotalTrafficOut": totalTrafficOut,
+				"Load":            loadValue,
 			}
 			mu.Unlock()
 		}(node)
@@ -568,4 +588,47 @@ func (h *NodeHandler) GetUserNodes(c *gin.Context) {
 		},
 		"nodes": nodeList,
 	})
+}
+
+// NodeLoadInfo 节点负载信息
+type NodeLoadInfo struct {
+	IP                string  `json:"ip"`
+	LoadScore         float64 `json:"load_score"`
+	CurrentConns      int     `json:"current_conns"`
+	PeakConns         int     `json:"peak_conns"`
+	CurrentTraffic    int64   `json:"current_traffic"`
+	PeakTraffic       int64   `json:"peak_traffic"`
+	CPUUsage          float64 `json:"cpu_usage"`
+	MemUsage          float64 `json:"mem_usage"`
+	ConnGrowthRate    float64 `json:"conn_growth_rate"`
+	TrafficGrowthRate float64 `json:"traffic_growth_rate"`
+	Timestamp         int64   `json:"timestamp"`
+}
+
+// ReceiveNodeLoad 接收节点负载信息
+func (h *NodeHandler) ReceiveNodeLoad(c *gin.Context) {
+	var nodeLoad NodeLoadInfo
+	if err := c.ShouldBindJSON(&nodeLoad); err != nil {
+		h.logger.Error("Failed to bind node load info", "error", err)
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "无效的请求数据"})
+		return
+	}
+
+	// 将负载百分比转换为字符串形式，如0.11118003913894325 -> "0.11%"
+	loadPercentage := fmt.Sprintf("%.2f%%", nodeLoad.LoadScore*100)
+
+	// 存储到Redis中，使用IP作为键
+	ctx := context.Background()
+	key := fmt.Sprintf("node:load:%s", nodeLoad.IP)
+
+	// 设置过期时间为60秒，确保数据不会过期
+	err := h.redisClient.Set(ctx, key, loadPercentage, 60*time.Second).Err()
+	if err != nil {
+		h.logger.Error("Failed to store node load in Redis", "error", err, "ip", nodeLoad.IP)
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "存储负载信息失败"})
+		return
+	}
+
+	h.logger.Info("Node load info received", "ip", nodeLoad.IP, "load", loadPercentage)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "负载信息已接收"})
 }

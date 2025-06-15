@@ -85,7 +85,7 @@ func SetupRouter(cfg *config.Config, logger *logger.Logger, db *sqlx.DB, redisCl
 	// 初始化处理器
 	userHandler := handler.NewUserHandler(userService, redisClient, emailService, logger, geetestClient, proxyService)
 	userCheckinHandler := handler.NewUserCheckinHandler(userService, userCheckinService, logger)
-	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger)
+	nodeHandler := handler.NewNodeHandler(nodeService, userService, logger, redisClient)
 	proxyHandler := handler.NewProxyHandler(proxyService, nodeService, userService, logger)
 	proxyAuthHandler := handler.NewProxyAuthHandler(proxyService, userService, userTrafficLogService, logger)
 	adHandler := handler.NewAdHandler(adService, logger)

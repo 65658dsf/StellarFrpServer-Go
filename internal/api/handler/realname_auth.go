@@ -250,7 +250,6 @@ func (h *RealNameAuthHandler) RealNameAuth(c *gin.Context) {
 		// 如果用户组ID是1，则修改为2
 		if user.GroupID == 1 {
 			user.GroupID = 2
-			h.logger.Info("用户实名认证成功，用户组从1修改为2", "username", user.Username, "userID", user.ID)
 		}
 
 		if err := userRepoTx.Update(context.Background(), user); err != nil {

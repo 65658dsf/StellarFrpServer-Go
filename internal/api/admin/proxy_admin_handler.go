@@ -1175,8 +1175,6 @@ func (h *ProxyAdminHandler) DeleteProxy(c *gin.Context) {
 		} else if resp.StatusCode != http.StatusOK {
 			h.logger.Warn("节点返回非200状态码，但将继续删除隧道", "statusCode", resp.StatusCode, "response", string(body))
 		}
-
-		h.logger.Info("已尝试关闭隧道，准备删除", "proxy_id", proxy.ID, "proxy_name", proxy.ProxyName)
 	}
 
 	// 删除隧道

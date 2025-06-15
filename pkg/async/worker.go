@@ -94,8 +94,6 @@ func (w *Worker) executeTask(task Task) {
 		StartTime: time.Now(),
 	}
 
-	w.logger.Info("Starting async task", "task_id", task.ID)
-
 	// 创建带超时的上下文
 	ctx := context.Background()
 	if task.Timeout > 0 {
@@ -108,7 +106,6 @@ func (w *Worker) executeTask(task Task) {
 	var err error
 	for attempt := 0; attempt <= task.RetryMax; attempt++ {
 		if attempt > 0 {
-			w.logger.Info("Retrying task", "task_id", task.ID, "attempt", attempt)
 			time.Sleep(time.Second * time.Duration(attempt)) // 简单的退避策略
 		}
 
@@ -117,7 +114,7 @@ func (w *Worker) executeTask(task Task) {
 			break
 		}
 
-		w.logger.Error("Task execution failed", "task_id", task.ID, "attempt", attempt, "error", err)
+		w.logger.Error("任务执行失败", "task_id", task.ID, "attempt", attempt, "error", err)
 	}
 
 	result.EndTime = time.Now()
@@ -130,8 +127,8 @@ func (w *Worker) executeTask(task Task) {
 	w.mu.Unlock()
 
 	if err != nil {
-		w.logger.Error("Async task failed", "task_id", task.ID, "error", err)
+		w.logger.Error("异步任务失败", "task_id", task.ID, "error", err)
 	} else {
-		w.logger.Info("Async task completed successfully", "task_id", task.ID, "duration", result.EndTime.Sub(result.StartTime))
+		w.logger.Info("异步任务完成", "task_id", task.ID, "duration", result.EndTime.Sub(result.StartTime))
 	}
 }

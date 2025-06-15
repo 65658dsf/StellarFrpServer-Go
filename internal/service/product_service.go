@@ -156,7 +156,6 @@ func (s *ProductService) ProcessAfdianWebhook(data map[string]interface{}) (bool
 
 	// 只处理支付成功的订单 (状态为2表示已支付，1表示未支付)
 	if int(status) != 2 {
-		s.logger.Info("订单未支付成功", "status", int(status), "out_trade_no", outTradeNo)
 		return false, fmt.Errorf("订单未支付成功，状态: %d", int(status))
 	}
 
@@ -165,19 +164,16 @@ func (s *ProductService) ProcessAfdianWebhook(data map[string]interface{}) (bool
 
 	// 检查是否为测试数据
 	if remark == "" {
-		s.logger.Info("检测到爱发电测试数据", "out_trade_no", outTradeNo)
 		return true, nil
 	}
 
 	// 记录完整的remark信息
-	s.logger.Info("处理已支付订单", "remark", remark, "out_trade_no", outTradeNo)
 
 	// 尝试从remark中提取订单号
 	var orderNo string
 	parts := strings.Split(remark, "|")
 	if len(parts) >= 2 && strings.HasPrefix(parts[1], "SFP") {
 		orderNo = parts[1]
-		s.logger.Info("从remark中提取订单号", "order_no", orderNo)
 
 		// 根据订单号查询
 		order, err := s.orderRepo.GetOrderByOrderNo(orderNo)
@@ -203,14 +199,12 @@ func (s *ProductService) ProcessAfdianWebhook(data map[string]interface{}) (bool
 		s.logger.Error("查询订单失败", "error", err, "remark", remark)
 		// 如果是测试数据或特殊情况，返回成功
 		if strings.Contains(err.Error(), "converting NULL to string") {
-			s.logger.Info("忽略NULL转换错误", "remark", remark)
 			return true, nil
 		}
 		return false, fmt.Errorf("查询订单失败: %w", err)
 	}
 
 	if order == nil {
-		s.logger.Warn("订单不存在", "remark", remark)
 		// 如果是测试数据，返回成功
 		if strings.Contains(remark, "test") || strings.Contains(outTradeNo, "test") {
 			return true, nil
@@ -241,7 +235,6 @@ func (s *ProductService) executeReward(order *model.Order) error {
 
 	// 检查奖励动作是否有效
 	if !order.RewardAction.Valid || order.RewardAction.String == "" {
-		s.logger.Info("订单没有奖励动作", "order_no", order.OrderNo)
 		return nil
 	}
 
@@ -321,7 +314,7 @@ func (s *ProductService) ProcessUnexecutedRewards() error {
 
 	for _, order := range orders {
 		if err := s.executeReward(&order); err != nil {
-			s.logger.Error("执行奖励失败", "error", err, "order_no", order.OrderNo)
+			s.logger.Error("执行奖励失败", "error", err)
 			// 继续处理其他订单
 			continue
 		}

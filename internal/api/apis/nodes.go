@@ -19,5 +19,7 @@ func RegisterNodeRoutes(router *gin.RouterGroup, nodeHandler *handler.NodeHandle
 		nodes.POST("/donate", nodeHandler.DonateNode)
 		// 获取用户自己的节点
 		nodes.GET("/my", nodeHandler.GetUserNodes)
+		// 接收节点负载信息
+		nodes.POST("/load/webhook", nodeHandler.ReceiveNodeLoad)
 	}
 }
